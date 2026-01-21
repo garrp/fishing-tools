@@ -6,6 +6,33 @@ document.querySelectorAll(".nav button").forEach(btn => {
     loadTool(tool);
   });
 });
+// Shared app state
+const state = {
+  lat: null,
+  lon: null,
+  placeLabel: "",
+  matches: [],
+  selectedIndex: 0
+};
+
+function escHtml(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function setResolvedLocation(lat, lon, label) {
+  state.lat = lat;
+  state.lon = lon;
+  state.placeLabel = label || "";
+}
+
+function hasResolvedLocation() {
+  return typeof state.lat === "number" && typeof state.lon === "number";
+}
 
 function loadTool(tool) {
   app.innerHTML = "";

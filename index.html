@@ -1,30 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>FishyNW Fishing Tools</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="styles.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
 
 <header class="header">
-  <img src="https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png"
-       alt="FishyNW"
-       class="logo">
+  <img
+    src="https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png"
+    alt="FishyNW"
+    class="logo"
+  />
 </header>
 
-<nav class="nav">
-  <button data-tool="times">Best Fishing Times</button>
-  <button data-tool="wind">Wind</button>
-  <button data-tool="depth">Depth Calculator</button>
-  <button data-tool="tips">Species Tips</button>
-  <button data-tool="speed">Speedometer</button>
+<nav class="nav" aria-label="Tools">
+  <button class="nav-btn" data-tool="times">Best Fishing Times</button>
+  <button class="nav-btn" data-tool="wind">Wind</button>
+  <button class="nav-btn" data-tool="depth">Depth Calculator</button>
+  <button class="nav-btn" data-tool="tips">Species Tips</button>
+  <button class="nav-btn" data-tool="speed">Speedometer</button>
 </nav>
 
-<main id="app">
-  <!-- Content injected here -->
-</main>
+<main id="app" class="app" role="main"></main>
 
 <footer class="footer">
   FishyNW.com

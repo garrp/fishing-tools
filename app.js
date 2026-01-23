@@ -1,6 +1,6 @@
 // app.js
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.5
+// Version 1.0.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 
 "use strict";
@@ -10,7 +10,7 @@
 
   Expects an index.html with ONE root:
     <main id="app"></main>
-    <script src="app.js" defer></script>
+    <script src="app.js"></script>
 
   Notes:
   - Uses Open-Meteo for sunrise/sunset and wind.
@@ -18,14 +18,12 @@
   - Uses browser geolocation for "Use my location".
   - Reverse geocodes GPS lat/lon to a nearest city label when possible.
   - On mobile: header stacks, nav is a clean 2-column grid.
-  - Location is saved to localStorage and restored on next visit.
-  - Best Times auto-displays after location is acquired and no button is shown.
-  - Wind auto-displays after location is acquired and no button is shown.
-  - Wind page includes a simple line chart (canvas) for the next 24 hours (mobile-friendly).
+  - Best Times auto-displays as soon as a location is acquired (GPS or place selection).
+  - Wind page shows per-hour GO / CAUTION / NO GO using wind + gust thresholds.
   - GA4 loads ONLY after user accepts the consent banner.
 */
 
-const APP_VERSION = "1.0.5";
+const APP_VERSION = "1.0.3";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -93,6 +91,7 @@ function renderConsentBannerIfNeeded() {
 
   if (document.getElementById("consent_bar")) return;
 
+  // Add bottom padding so the banner does not cover content
   try {
     document.body.style.paddingBottom = "120px";
   } catch (e) {
@@ -133,49 +132,6 @@ function renderConsentBannerIfNeeded() {
 }
 
 // ----------------------------
-// Persisted last location
-// ----------------------------
-const LAST_LOC_KEY = "fishynw_last_location_v1"; // {lat:number, lon:number, label:string}
-
-function saveLastLocation(lat, lon, label) {
-  try {
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-    const payload = {
-      lat: Number(lat),
-      lon: Number(lon),
-      label: String(label || "")
-    };
-    localStorage.setItem(LAST_LOC_KEY, JSON.stringify(payload));
-  } catch (e) {
-    // ignore
-  }
-}
-
-function loadLastLocation() {
-  try {
-    const raw = localStorage.getItem(LAST_LOC_KEY);
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    if (!obj) return null;
-    const lat = Number(obj.lat);
-    const lon = Number(obj.lon);
-    const label = String(obj.label || "");
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-    return { lat: lat, lon: lon, label: label };
-  } catch (e) {
-    return null;
-  }
-}
-
-function clearLastLocation() {
-  try {
-    localStorage.removeItem(LAST_LOC_KEY);
-  } catch (e) {
-    // ignore
-  }
-}
-
-// ----------------------------
 // Shared state
 // ----------------------------
 const state = {
@@ -185,13 +141,14 @@ const state = {
   placeLabel: "",
   matches: [],
   selectedIndex: 0,
-  speedWatchId: null
+  speedWatchId: null,
+  bigWater: false
 };
 
 // ----------------------------
 // DOM
 // ----------------------------
-let app = null;
+const app = document.getElementById("app");
 
 // ----------------------------
 // Styles (mobile-first cleanup)
@@ -283,16 +240,32 @@ let app = null;
   .list { margin: 8px 0 0 18px; }
   .list li { margin-bottom: 6px; }
 
-  /* Wind chart */
-  .chartWrap { margin-top: 10px; }
-  canvas.windChart {
-    width: 100%;
-    height: 180px;
-    display: block;
-    border-radius: 12px;
-    background: rgba(255,255,255,0.7);
-    border: 1px solid rgba(0,0,0,0.12);
+  .dangerBtn { background:#f4a3a3 !important; border-color:#e48f8f !important; color:#3b0a0a !important; }
+  .dangerBtn:hover { background:#ee8f8f !important; }
+
+  .pill {
+    display:inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-weight: 900;
+    font-size: 12px;
+    border: 1px solid rgba(0,0,0,0.16);
+    margin-left: 8px;
+    line-height: 16px;
+    white-space: nowrap;
   }
+  .pillGo { background:#8fd19e; color:#0b2e13; border-color:#6fbf87; }
+  .pillCaution { background:#f1c40f; color:#3b2a00; border-color:#d4aa00; }
+  .pillNoGo { background:#e74c3c; color:#fff; border-color:#c0392b; }
+
+  .chkRow {
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-top:10px;
+  }
+  .chkRow input { width:auto; }
+  .chkRow label { font-weight:900; }
 
   /* Consent banner */
   .consentBar {
@@ -354,8 +327,6 @@ let app = null;
 
     .card { padding: 12px; border-radius: 14px; }
 
-    canvas.windChart { height: 160px; }
-
     .consentInner { flex-direction: column; align-items: stretch; }
     .consentBtns { justify-content: stretch; min-width: 0; }
     .consentBtn { width: 100%; }
@@ -394,7 +365,6 @@ function setResolvedLocation(lat, lon, label) {
   state.lat = lat;
   state.lon = lon;
   state.placeLabel = label || "";
-  saveLastLocation(state.lat, state.lon, state.placeLabel);
 }
 
 function hasResolvedLocation() {
@@ -404,6 +374,53 @@ function hasResolvedLocation() {
 function normalizePlaceQuery(s) {
   const x = String(s || "").trim().split(/\s+/).join(" ");
   return x;
+}
+
+function degToCompass(deg) {
+  const dirs = [
+    "N",
+    "NNE",
+    "NE",
+    "ENE",
+    "E",
+    "ESE",
+    "SE",
+    "SSE",
+    "S",
+    "SSW",
+    "SW",
+    "WSW",
+    "W",
+    "WNW",
+    "NW",
+    "NNW"
+  ];
+  const d = Number(deg);
+  if (!Number.isFinite(d)) return "";
+  const i = Math.floor((d / 22.5) + 0.5) % 16;
+  return dirs[i];
+}
+
+// Go/No-Go wind thresholds (from your Streamlit logic)
+function computeWindRating(speedMph, gustMph, bigWater) {
+  const s = Number(speedMph);
+  const g = Number(gustMph);
+
+  if (!bigWater) {
+    if (s >= 16 || g >= 23) return "NO GO";
+    if (s > 10 || g > 15) return "CAUTION";
+    return "GO";
+  }
+
+  if (s >= 13 || g >= 19) return "NO GO";
+  if (s > 8 || g > 12) return "CAUTION";
+  return "GO";
+}
+
+function ratingPillHtml(rating) {
+  if (rating === "GO") return '<span class="pill pillGo">GO</span>';
+  if (rating === "CAUTION") return '<span class="pill pillCaution">CAUTION</span>';
+  return '<span class="pill pillNoGo">NO GO</span>';
 }
 
 // ----------------------------
@@ -501,7 +518,7 @@ async function fetchSunTimes(lat, lon) {
 }
 
 // ----------------------------
-// API: Wind
+// API: Wind (speed + gust + direction)
 // ----------------------------
 async function fetchWind(lat, lon) {
   const url =
@@ -510,27 +527,42 @@ async function fetchWind(lat, lon) {
     encodeURIComponent(lat) +
     "&longitude=" +
     encodeURIComponent(lon) +
-    "&hourly=wind_speed_10m&wind_speed_unit=mph&timezone=auto";
+    "&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m" +
+    "&wind_speed_unit=mph&timezone=auto";
 
   const r = await fetch(url);
   const data = await r.json();
+
   const times = data && data.hourly && data.hourly.time ? data.hourly.time : [];
   const speeds =
     data && data.hourly && data.hourly.wind_speed_10m
       ? data.hourly.wind_speed_10m
       : [];
-  return { times: times, speeds: speeds };
+  const gusts =
+    data && data.hourly && data.hourly.wind_gusts_10m
+      ? data.hourly.wind_gusts_10m
+      : [];
+  const dirs =
+    data && data.hourly && data.hourly.wind_direction_10m
+      ? data.hourly.wind_direction_10m
+      : [];
+
+  return { times: times, speeds: speeds, gusts: gusts, dirs: dirs };
 }
 
-function splitCurrentFutureWind(times, speeds) {
+function splitCurrentFutureWind(times, speeds, gusts, dirs) {
   const now = new Date();
   const current = [];
   const future = [];
 
   for (let i = 0; i < times.length; i++) {
     const dt = new Date(times[i]);
-    const mph = speeds[i];
-    if (!Number.isFinite(Number(mph))) continue;
+    const mph = Number(speeds[i]);
+    const gst = Number(gusts[i]);
+    const dirDeg = Number(dirs[i]);
+
+    if (!Number.isFinite(mph)) continue;
+    if (!Number.isFinite(gst)) continue;
 
     const label = dt.toLocaleString([], {
       weekday: "short",
@@ -539,172 +571,22 @@ function splitCurrentFutureWind(times, speeds) {
       hour: "numeric"
     });
 
-    if (dt <= now) current.push({ label: label, mph: Number(mph).toFixed(1) });
-    else future.push({ label: label, mph: Number(mph).toFixed(1) });
+    const item = {
+      label: label,
+      mph: mph.toFixed(1),
+      gust: gst.toFixed(1),
+      dir: degToCompass(dirDeg),
+      rating: computeWindRating(mph, gst, state.bigWater)
+    };
+
+    if (dt <= now) current.push(item);
+    else future.push(item);
   }
 
   return {
     current: current.slice(-6),
     future: future.slice(0, 12)
   };
-}
-
-function nextHoursWindSeries(times, speeds, hours) {
-  const now = new Date();
-  const end = new Date(now.getTime() + (hours || 24) * 60 * 60 * 1000);
-
-  const series = [];
-  for (let i = 0; i < times.length; i++) {
-    const dt = new Date(times[i]);
-    if (!(dt >= now && dt <= end)) continue;
-
-    const mph = Number(speeds[i]);
-    if (!Number.isFinite(mph)) continue;
-
-    series.push({ dt: dt, mph: mph });
-  }
-
-  // If API time spacing or timezone parsing causes weird empties, fallback to first 24 future points
-  if (series.length < 6) {
-    const future = [];
-    for (let j = 0; j < times.length; j++) {
-      const dt2 = new Date(times[j]);
-      if (dt2 < now) continue;
-      const mph2 = Number(speeds[j]);
-      if (!Number.isFinite(mph2)) continue;
-      future.push({ dt: dt2, mph: mph2 });
-      if (future.length >= 24) break;
-    }
-    return future;
-  }
-
-  return series;
-}
-
-// ----------------------------
-// Simple canvas line chart (wind)
-// ----------------------------
-function drawWindLineChart(canvas, points) {
-  if (!canvas || !canvas.getContext) return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  const cssW = canvas.clientWidth || 600;
-  const cssH = canvas.clientHeight || 180;
-  const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-
-  canvas.width = Math.floor(cssW * dpr);
-  canvas.height = Math.floor(cssH * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  ctx.clearRect(0, 0, cssW, cssH);
-
-  const padL = 36;
-  const padR = 10;
-  const padT = 10;
-  const padB = 24;
-
-  const w = cssW - padL - padR;
-  const h = cssH - padT - padB;
-
-  if (!points || points.length < 2 || w <= 10 || h <= 10) {
-    ctx.fillStyle = "rgba(0,0,0,0.75)";
-    ctx.font = "13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
-    ctx.fillText("Not enough data for chart.", 12, 22);
-    return;
-  }
-
-  let minV = Infinity;
-  let maxV = -Infinity;
-  for (let i = 0; i < points.length; i++) {
-    const v = Number(points[i].mph);
-    if (!Number.isFinite(v)) continue;
-    if (v < minV) minV = v;
-    if (v > maxV) maxV = v;
-  }
-
-  if (!Number.isFinite(minV) || !Number.isFinite(maxV)) return;
-
-  // Add headroom so line is not pinned to top/bottom
-  const range = Math.max(1, maxV - minV);
-  const extra = range * 0.15;
-  minV = Math.max(0, minV - extra);
-  maxV = maxV + extra;
-
-  function xFor(i) {
-    return padL + (i / (points.length - 1)) * w;
-  }
-  function yFor(v) {
-    const t = (v - minV) / (maxV - minV);
-    return padT + (1 - t) * h;
-  }
-
-  // Grid lines (3)
-  ctx.strokeStyle = "rgba(0,0,0,0.10)";
-  ctx.lineWidth = 1;
-  for (let g = 0; g <= 2; g++) {
-    const yy = padT + (g / 2) * h;
-    ctx.beginPath();
-    ctx.moveTo(padL, yy);
-    ctx.lineTo(padL + w, yy);
-    ctx.stroke();
-  }
-
-  // Y labels (top/mid/bot)
-  ctx.fillStyle = "rgba(0,0,0,0.70)";
-  ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
-  const yTop = maxV;
-  const yMid = (minV + maxV) / 2;
-  const yBot = minV;
-
-  ctx.fillText(String(Math.round(yTop)) + " mph", 6, padT + 12);
-  ctx.fillText(String(Math.round(yMid)) + " mph", 6, padT + h / 2 + 4);
-  ctx.fillText(String(Math.round(yBot)) + " mph", 6, padT + h + 4);
-
-  // Line path
-  ctx.strokeStyle = "rgba(7,27,31,0.75)";
-  ctx.lineWidth = 2;
-
-  ctx.beginPath();
-  ctx.moveTo(xFor(0), yFor(points[0].mph));
-  for (let i2 = 1; i2 < points.length; i2++) {
-    ctx.lineTo(xFor(i2), yFor(points[i2].mph));
-  }
-  ctx.stroke();
-
-  // Small dots
-  ctx.fillStyle = "rgba(7,27,31,0.70)";
-  for (let d = 0; d < points.length; d++) {
-    const xx = xFor(d);
-    const yy2 = yFor(points[d].mph);
-    ctx.beginPath();
-    ctx.arc(xx, yy2, 2.2, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // X labels (start, mid, end)
-  function hourLabel(dt) {
-    try {
-      return dt.toLocaleTimeString([], { hour: "numeric" });
-    } catch (e) {
-      return "";
-    }
-  }
-  const iStart = 0;
-  const iMid = Math.floor((points.length - 1) / 2);
-  const iEnd = points.length - 1;
-
-  ctx.fillStyle = "rgba(0,0,0,0.70)";
-  ctx.textAlign = "left";
-  ctx.fillText(hourLabel(points[iStart].dt), padL, padT + h + 18);
-
-  ctx.textAlign = "center";
-  ctx.fillText(hourLabel(points[iMid].dt), xFor(iMid), padT + h + 18);
-
-  ctx.textAlign = "right";
-  ctx.fillText(hourLabel(points[iEnd].dt), padL + w, padT + h + 18);
-
-  ctx.textAlign = "left";
 }
 
 // ----------------------------
@@ -787,7 +669,7 @@ function pageEl() {
 
 // ----------------------------
 // UI: Location Picker (reusable)
-// onResolved fires when we have lat/lon
+// onResolved is optional callback fired when we have lat/lon
 // ----------------------------
 function renderLocationPicker(container, placeKey, onResolved) {
   appendHtml(
@@ -806,10 +688,6 @@ function renderLocationPicker(container, placeKey, onResolved) {
 
       <div id="${placeKey}_matches" style="margin-top:10px;"></div>
       <div id="${placeKey}_using" class="small" style="margin-top:10px;"></div>
-
-      <div style="margin-top:10px;">
-        <button id="${placeKey}_clear" type="button" class="consentDecline">Clear saved location</button>
-      </div>
     </div>
   `
   );
@@ -818,22 +696,7 @@ function renderLocationPicker(container, placeKey, onResolved) {
   const matchesEl = document.getElementById(placeKey + "_matches");
   const placeInput = document.getElementById(placeKey + "_place");
 
-  document.getElementById(placeKey + "_clear").addEventListener("click", function () {
-    clearLastLocation();
-
-    state.lat = null;
-    state.lon = null;
-    state.placeLabel = "";
-    state.matches = [];
-    state.selectedIndex = 0;
-
-    matchesEl.innerHTML = "";
-    placeInput.value = "";
-    usingEl.textContent = "Saved location cleared. Search a place or use your location.";
-
-    if (typeof onResolved === "function") onResolved("cleared");
-  });
-
+  // Autofill input if we already have a location
   if (hasResolvedLocation()) {
     const lbl = state.placeLabel
       ? state.placeLabel
@@ -841,120 +704,128 @@ function renderLocationPicker(container, placeKey, onResolved) {
 
     placeInput.value = state.placeLabel ? state.placeLabel : "Current location";
     usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(lbl);
-    if (typeof onResolved === "function") onResolved("restored_or_existing");
+    if (typeof onResolved === "function") onResolved();
   }
 
-  document.getElementById(placeKey + "_gps").addEventListener("click", function () {
-    if (!navigator.geolocation) {
-      usingEl.textContent = "Geolocation not supported on this device/browser.";
-      return;
-    }
+  document
+    .getElementById(placeKey + "_gps")
+    .addEventListener("click", function () {
+      if (!navigator.geolocation) {
+        usingEl.textContent = "Geolocation not supported on this device/browser.";
+        return;
+      }
 
-    usingEl.textContent = "Requesting location permission...";
-    navigator.geolocation.getCurrentPosition(
-      function (pos) {
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
+      usingEl.textContent = "Requesting location permission...";
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
 
-        setResolvedLocation(lat, lon, "Current location");
-        state.matches = [];
-        state.selectedIndex = 0;
-        matchesEl.innerHTML = "";
+          setResolvedLocation(lat, lon, "Current location");
+          state.matches = [];
+          state.selectedIndex = 0;
+          matchesEl.innerHTML = "";
 
-        placeInput.value = "Locating nearest city...";
-        usingEl.innerHTML =
-          "<strong>Using:</strong> Current location (" +
-          lat.toFixed(4) +
-          ", " +
-          lon.toFixed(4) +
-          ")";
+          // Immediate feedback + autofill input
+          placeInput.value = "Locating nearest city...";
+          usingEl.innerHTML =
+            "<strong>Using:</strong> Current location (" +
+            lat.toFixed(4) +
+            ", " +
+            lon.toFixed(4) +
+            ")";
 
-        if (typeof onResolved === "function") onResolved("gps");
+          if (typeof onResolved === "function") onResolved();
 
-        reverseGeocode(lat, lon).then(function (label) {
-          if (label) {
-            setResolvedLocation(lat, lon, label);
-            placeInput.value = label;
-            usingEl.innerHTML =
-              "<strong>Using:</strong> " +
-              escHtml(label) +
-              " (" +
-              lat.toFixed(4) +
-              ", " +
-              lon.toFixed(4) +
-              ")";
-          } else {
-            placeInput.value = "Current location";
-          }
+          // Try to resolve nearest city/town name
+          reverseGeocode(lat, lon).then(function (label) {
+            if (label) {
+              setResolvedLocation(lat, lon, label);
+              placeInput.value = label;
+              usingEl.innerHTML =
+                "<strong>Using:</strong> " +
+                escHtml(label) +
+                " (" +
+                lat.toFixed(4) +
+                ", " +
+                lon.toFixed(4) +
+                ")";
+            } else {
+              placeInput.value = "Current location";
+            }
 
-          if (typeof onResolved === "function") onResolved("gps_reverse");
-        });
-      },
-      function (err) {
-        usingEl.innerHTML =
-          "<strong>Location error:</strong> " + escHtml(err.message);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 500 }
-    );
-  });
-
-  document.getElementById(placeKey + "_search").addEventListener("click", async function () {
-    const q = normalizePlaceQuery(placeInput.value);
-    if (!q) {
-      usingEl.textContent = "Type a place name or ZIP, or use your location.";
-      return;
-    }
-
-    usingEl.textContent = "Searching...";
-    const matches = await geocodeSearch(q, 10);
-    state.matches = matches;
-    state.selectedIndex = 0;
-
-    if (!matches.length) {
-      matchesEl.innerHTML = "";
-      usingEl.textContent = "No matches. Try City, State or ZIP.";
-      return;
-    }
-
-    const optionsHtml = matches
-      .map(function (m, i) {
-        return '<option value="' + i + '">' + escHtml(m.label) + "</option>";
-      })
-      .join("");
-
-    matchesEl.innerHTML =
-      '<label class="small"><strong>Choose the correct match</strong></label>' +
-      '<select id="' +
-      placeKey +
-      '_select">' +
-      optionsHtml +
-      "</select>" +
-      '<div style="margin-top:10px;">' +
-      '<button id="' +
-      placeKey +
-      '_use" style="width:100%;">Use this place</button>' +
-      "</div>";
-
-    document
-      .getElementById(placeKey + "_select")
-      .addEventListener("change", function (e) {
-        state.selectedIndex = Number(e.target.value);
-      });
-
-    document.getElementById(placeKey + "_use").addEventListener("click", function () {
-      const chosen = state.matches[state.selectedIndex];
-      if (!chosen) return;
-
-      setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
-
-      placeInput.value = chosen.label;
-      usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);
-
-      if (typeof onResolved === "function") onResolved("search_pick");
+            if (typeof onResolved === "function") onResolved();
+          });
+        },
+        function (err) {
+          usingEl.innerHTML =
+            "<strong>Location error:</strong> " + escHtml(err.message);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 500 }
+      );
     });
 
-    usingEl.textContent = "Pick the correct match, then tap Use this place.";
-  });
+  document
+    .getElementById(placeKey + "_search")
+    .addEventListener("click", async function () {
+      const q = normalizePlaceQuery(placeInput.value);
+      if (!q) {
+        usingEl.textContent = "Type a place name or ZIP, or use your location.";
+        return;
+      }
+
+      usingEl.textContent = "Searching...";
+      const matches = await geocodeSearch(q, 10);
+      state.matches = matches;
+      state.selectedIndex = 0;
+
+      if (!matches.length) {
+        matchesEl.innerHTML = "";
+        usingEl.textContent = "No matches. Try City, State or ZIP.";
+        return;
+      }
+
+      const optionsHtml = matches
+        .map(function (m, i) {
+          return '<option value="' + i + '">' + escHtml(m.label) + "</option>";
+        })
+        .join("");
+
+      matchesEl.innerHTML =
+        '<label class="small"><strong>Choose the correct match</strong></label>' +
+        '<select id="' +
+        placeKey +
+        '_select">' +
+        optionsHtml +
+        "</select>" +
+        '<div style="margin-top:10px;">' +
+        '<button id="' +
+        placeKey +
+        '_use" style="width:100%;">Use this place</button>' +
+        "</div>";
+
+      document
+        .getElementById(placeKey + "_select")
+        .addEventListener("change", function (e) {
+          state.selectedIndex = Number(e.target.value);
+        });
+
+      document.getElementById(placeKey + "_use").addEventListener("click", function () {
+        const chosen = state.matches[state.selectedIndex];
+        if (!chosen) return;
+
+        setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
+
+        // Autofill input with chosen place label
+        placeInput.value = chosen.label;
+
+        usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);
+
+        if (typeof onResolved === "function") onResolved();
+      });
+
+      usingEl.textContent = "Pick the correct match, then tap Use this place.";
+    });
 }
 
 // ----------------------------
@@ -965,42 +836,47 @@ function renderBestTimesPage() {
   page.innerHTML =
     '<div class="card">' +
     "  <h2>Best Fishing Times</h2>" +
-    '  <div class="small">Auto-displays times after location is acquired.</div>' +
+    '  <div class="small">Search a place or use your location. Times will display automatically.</div>' +
     "</div>";
 
+  // Output area (no button)
   appendHtml(
     page,
     `
-    <div class="card" id="times_controls"></div>
-
-    <div class="card" id="times_results">
-      <div id="times_out" style="margin-top:0;"></div>
+    <div class="card">
+      <div id="times_out"></div>
     </div>
   `
   );
 
-  const controls = document.getElementById("times_controls");
   const out = document.getElementById("times_out");
 
-  function onResolved() {
-    autoDisplayTimes();
-  }
+  // Guard against double-calls (GPS fires twice: raw coords, then reverse-geocode label)
+  let inflight = false;
+  let lastKey = "";
 
-  renderLocationPicker(controls, "times", onResolved);
-
-  async function autoDisplayTimes() {
-    out.innerHTML = "";
-
+  async function loadTimesIfReady() {
     if (!hasResolvedLocation()) {
-      out.textContent = "Pick a place or use your location first.";
+      out.innerHTML =
+        '<div class="small">Pick a place or use your location to see times.</div>';
       return;
     }
 
-    out.textContent = "Loading...";
+    const key = state.lat.toFixed(5) + "," + state.lon.toFixed(5);
+    if (inflight) return;
+    if (key === lastKey && out.innerHTML) return;
+
+    inflight = true;
+    lastKey = key;
+
+    out.innerHTML = '<div class="small">Loading...</div>';
+
     try {
       const sun = await fetchSunTimes(state.lat, state.lon);
       if (!sun) {
-        out.textContent = "Could not load sunrise/sunset. Try again.";
+        out.innerHTML =
+          '<div class="small">Could not load sunrise/sunset. Try again.</div>';
+        inflight = false;
         return;
       }
 
@@ -1012,7 +888,14 @@ function renderBestTimesPage() {
       const eveningStart = new Date(sunset.getTime() - 60 * 60 * 1000);
       const eveningEnd = new Date(sunset.getTime() + 60 * 60 * 1000);
 
+      const label = state.placeLabel
+        ? state.placeLabel
+        : "Lat " + state.lat.toFixed(4) + ", Lon " + state.lon.toFixed(4);
+
       out.innerHTML =
+        '<div class="small" style="margin-bottom:10px;"><strong>Using:</strong> ' +
+        escHtml(label) +
+        "</div>" +
         '<div class="card compact">' +
         '  <div class="small"><strong>Morning Window</strong></div>' +
         '  <div style="font-size:20px;font-weight:900;">' +
@@ -1029,10 +912,20 @@ function renderBestTimesPage() {
         escHtml(formatTime(eveningEnd)) +
         "</div>" +
         "</div>";
+
+      inflight = false;
     } catch (e) {
-      out.textContent = "Could not load sunrise/sunset. Try again.";
+      out.innerHTML =
+        '<div class="small">Could not load sunrise/sunset. Try again.</div>';
+      inflight = false;
     }
   }
+
+  // Location picker will call this whenever location becomes available
+  renderLocationPicker(page, "times", loadTimesIfReady);
+
+  // If a location was already resolved earlier (from another page), show times immediately
+  loadTimesIfReady();
 }
 
 function renderWindPage() {
@@ -1040,30 +933,42 @@ function renderWindPage() {
   page.innerHTML =
     '<div class="card">' +
     "  <h2>Wind Forecast</h2>" +
-    '  <div class="small">Auto-displays winds after location is acquired.</div>' +
+    '  <div class="small">Hourly winds with GO / CAUTION / NO GO based on wind + gusts.</div>' +
     "</div>";
+
+  renderLocationPicker(page, "wind");
 
   appendHtml(
     page,
     `
-    <div class="card" id="wind_controls"></div>
+    <div class="card">
+      <div class="chkRow">
+        <input id="big_water_chk" type="checkbox" ${state.bigWater ? "checked" : ""}>
+        <label for="big_water_chk">Big water (more conservative)</label>
+      </div>
 
-    <div class="card" id="wind_results">
-      <div id="wind_out" style="margin-top:0;"></div>
+      <div style="margin-top:10px;">
+        <button id="wind_go" class="dangerBtn">Display Winds</button>
+      </div>
+
+      <div id="wind_out" style="margin-top:10px;"></div>
     </div>
   `
   );
 
-  const controls = document.getElementById("wind_controls");
-  const out = document.getElementById("wind_out");
+  document.getElementById("big_water_chk").addEventListener("change", function (e) {
+    state.bigWater = !!e.target.checked;
 
-  function onResolved() {
-    autoDisplayWinds();
-  }
+    // If winds are already displayed, re-render rating pills immediately
+    const out = document.getElementById("wind_out");
+    const hasAny = out && out.innerHTML && out.innerHTML.indexOf("mph") !== -1;
+    if (hasAny) {
+      document.getElementById("wind_go").click();
+    }
+  });
 
-  renderLocationPicker(controls, "wind", onResolved);
-
-  async function autoDisplayWinds() {
+  document.getElementById("wind_go").addEventListener("click", async function () {
+    const out = document.getElementById("wind_out");
     out.innerHTML = "";
 
     if (!hasResolvedLocation()) {
@@ -1074,20 +979,17 @@ function renderWindPage() {
     out.textContent = "Loading...";
     try {
       const w = await fetchWind(state.lat, state.lon);
-      const parts = splitCurrentFutureWind(w.times, w.speeds);
+      const parts = splitCurrentFutureWind(w.times, w.speeds, w.gusts, w.dirs);
 
-      // Chart series: next 24 hours (mobile-friendly)
-      const series = nextHoursWindSeries(w.times, w.speeds, 24);
+      const label = state.placeLabel
+        ? state.placeLabel
+        : "Lat " + state.lat.toFixed(4) + ", Lon " + state.lon.toFixed(4);
 
       let html = "";
-
       html +=
-        '<div class="card compact">' +
-        '<div class="small"><strong>Next 24 hours (mph)</strong></div>' +
-        '<div class="chartWrap" style="margin-top:8px;">' +
-        '<canvas id="wind_chart" class="windChart"></canvas>' +
-        "</div>" +
-        '<div class="small" style="margin-top:8px;">Line chart is hourly. Times are local.</div>' +
+        '<div class="small" style="margin-bottom:8px;"><strong>Using:</strong> ' +
+        escHtml(label) +
+        (state.bigWater ? " (big water)" : "") +
         "</div>";
 
       if (parts.current.length) {
@@ -1096,7 +998,15 @@ function renderWindPage() {
         html += parts.current
           .map(function (x) {
             return (
-              escHtml(x.label) + ": <strong>" + escHtml(x.mph) + " mph</strong>"
+              escHtml(x.label) +
+              ": <strong>" +
+              escHtml(x.mph) +
+              " mph</strong> (gust " +
+              escHtml(x.gust) +
+              " mph) " +
+              escHtml(x.dir) +
+              " " +
+              ratingPillHtml(x.rating)
             );
           })
           .join("<br>");
@@ -1109,35 +1019,30 @@ function renderWindPage() {
         html += parts.future
           .map(function (x) {
             return (
-              escHtml(x.label) + ": <strong>" + escHtml(x.mph) + " mph</strong>"
+              escHtml(x.label) +
+              ": <strong>" +
+              escHtml(x.mph) +
+              " mph</strong> (gust " +
+              escHtml(x.gust) +
+              " mph) " +
+              escHtml(x.dir) +
+              " " +
+              ratingPillHtml(x.rating)
             );
           })
           .join("<br>");
         html += "</div></div>";
       }
 
-      out.innerHTML = html || "No wind data returned.";
-
-      // Draw chart after HTML is in the DOM
-      const c = document.getElementById("wind_chart");
-      if (c && series && series.length >= 2) {
-        drawWindLineChart(c, series);
-
-        // Redraw on resize (simple, lightweight)
-        let resizeTimer = null;
-        window.addEventListener("resize", function () {
-          if (!document.getElementById("wind_chart")) return;
-          if (resizeTimer) clearTimeout(resizeTimer);
-          resizeTimer = setTimeout(function () {
-            const c2 = document.getElementById("wind_chart");
-            if (c2) drawWindLineChart(c2, series);
-          }, 120);
-        });
+      if (!parts.current.length && !parts.future.length) {
+        html += "No wind data returned.";
       }
+
+      out.innerHTML = html;
     } catch (e) {
       out.textContent = "Could not load wind. Try again.";
     }
-  }
+  });
 }
 
 function renderTrollingDepthPage() {
@@ -1521,27 +1426,6 @@ function render() {
   else renderSpeedometerPage();
 }
 
-// ----------------------------
-// Boot (safe if script is not deferred)
-// ----------------------------
-function boot() {
-  app = document.getElementById("app");
-  if (!app) return;
-
-  // Restore last location BEFORE first render so pages auto-run immediately
-  const last = loadLastLocation();
-  if (last) {
-    state.lat = last.lat;
-    state.lon = last.lon;
-    state.placeLabel = last.label || "";
-  }
-
-  renderConsentBannerIfNeeded();
-  render();
-}
-
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", boot);
-} else {
-  boot();
-}
+// Boot
+renderConsentBannerIfNeeded();
+render();

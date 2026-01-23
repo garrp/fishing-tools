@@ -1,6 +1,6 @@
 // app.js
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.6
+// Version 1.0.7
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 
 "use strict";
@@ -13,7 +13,7 @@
     <script src="app.js" defer></script>
 
   Notes:
-  - Uses Open-Meteo for sunrise/sunset and wind.
+  - Uses Open-Meteo for sunrise/sunset and wind/weather.
   - Uses Open-Meteo Geocoding for place search.
   - Uses browser geolocation for "Use my location".
   - Reverse geocodes GPS lat/lon to a nearest city label when possible.
@@ -24,10 +24,11 @@
   - Best Times includes a date picker (within available forecast range).
   - Wind includes a date picker (within available forecast range).
   - Wind page includes a simple line chart (canvas) for the selected date (hourly).
+  - Wind page includes a GO/CAUTION/NO-GO meter for boating/kayaking.
   - GA4 loads ONLY after user accepts the consent banner.
 */
 
-const APP_VERSION = "1.0.6";
+const APP_VERSION = "1.0.7";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -289,6 +290,57 @@ let app = null;
   .list { margin: 8px 0 0 18px; }
   .list li { margin-bottom: 6px; }
 
+  /* Two-column stat rows */
+  .row2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .statBox {
+    border-radius: 14px;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: rgba(255,255,255,0.6);
+    padding: 10px 12px;
+  }
+  .statLabel { font-size: 12px; opacity: 0.78; font-weight: 900; }
+  .statValue { margin-top: 4px; font-size: 18px; font-weight: 900; }
+
+  /* GO / CAUTION / NO-GO meter */
+  .meterWrap { margin-top: 10px; }
+  .meterBar {
+    height: 14px;
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid rgba(0,0,0,0.14);
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+  .meterSegGo { background: rgba(143,209,158,0.95); }
+  .meterSegCaution { background: rgba(245,211,104,0.95); }
+  .meterSegNoGo { background: rgba(244,163,163,0.95); }
+  .meterLabelRow {
+    display:flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 8px;
+    font-size: 12px;
+    opacity: 0.88;
+    font-weight: 900;
+  }
+  .meterBadge {
+    display:inline-block;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(0,0,0,0.14);
+    font-weight: 900;
+    font-size: 12px;
+    background: rgba(255,255,255,0.75);
+  }
+  .badgeGo { background: rgba(143,209,158,0.35); }
+  .badgeCaution { background: rgba(245,211,104,0.35); }
+  .badgeNoGo { background: rgba(244,163,163,0.35); }
+
   /* Wind chart */
   .chartWrap { margin-top: 10px; }
   canvas.windChart {
@@ -359,6 +411,8 @@ let app = null;
     .nav { grid-template-columns: repeat(2, 1fr); gap:10px; }
 
     .card { padding: 12px; border-radius: 14px; }
+
+    .row2 { grid-template-columns: 1fr 1fr; }
 
     canvas.windChart { height: 160px; }
 
@@ -446,6 +500,95 @@ function filterHourlyToDate(times, values, dateIso) {
     }
   }
   return out.filter(function (x) { return Number.isFinite(x.v); });
+}
+
+function buildDayListFromHourly(times) {
+  const set = Object.create(null);
+  const list = [];
+  if (!times || !times.length) return list;
+  for (let i = 0; i < times.length; i++) {
+    const t = String(times[i] || "");
+    if (t.length >= 10) {
+      const d = t.slice(0, 10);
+      if (!set[d]) {
+        set[d] = true;
+        list.push(d);
+      }
+    }
+  }
+  return list;
+}
+
+// ----------------------------
+// Boating / Kayak GO-CAUTION-NO-GO classifier (wind-based, conservative)
+// You can tweak these thresholds anytime.
+// ----------------------------
+function classifyGoCautionNoGo(maxSustMph, maxGustMph) {
+  const s = Number(maxSustMph);
+  const g = Number(maxGustMph);
+
+  // If gust missing, fall back to sustained
+  const gust = Number.isFinite(g) ? g : s;
+
+  // Conservative small-watercraft guidance:
+  // GO: sustained <= 10 AND gust <= 15
+  // CAUTION: sustained <= 15 AND gust <= 25
+  // NO-GO: anything higher
+  if (Number.isFinite(s) && Number.isFinite(gust)) {
+    if (s <= 10 && gust <= 15) {
+      return {
+        level: "GO",
+        color: "go",
+        reason: "Light winds and manageable gusts for most boating and kayak plans."
+      };
+    }
+    if (s <= 15 && gust <= 25) {
+      return {
+        level: "CAUTION",
+        color: "caution",
+        reason: "Winds or gusts may create whitecaps and push you around. Pick sheltered water and shorten plans."
+      };
+    }
+    return {
+      level: "NO-GO",
+      color: "nog",
+      reason: "High winds and/or gusts. Risk of unsafe conditions for small boats and kayaks."
+    };
+  }
+
+  return { level: "CAUTION", color: "caution", reason: "Not enough wind data to rate. Use caution." };
+}
+
+// ----------------------------
+// Exposure tips (temperature + rain chance)
+// - Includes drysuit, sun shirts, sunscreen mention
+// ----------------------------
+function exposureTips(tempMinF, tempMaxF, rainMaxPct) {
+  const tMin = Number(tempMinF);
+  const tMax = Number(tempMaxF);
+  const rain = Number(rainMaxPct);
+
+  const tips = [];
+
+  // Cold-water safety logic (very simplified)
+  // If air temps are cold, cold water is often even more dangerous.
+  if (Number.isFinite(tMin) && tMin <= 45) {
+    tips.push("Cold conditions: consider a drysuit or a proper cold-water layering system.");
+    tips.push("Bring warm hat, gloves, and a dry bag with spare layers.");
+  } else if (Number.isFinite(tMin) && tMin <= 55) {
+    tips.push("Cool conditions: consider a paddling jacket, insulating layers, and avoid long exposure if you get wet.");
+  }
+
+  // Rain/wet
+  if (Number.isFinite(rain) && rain >= 40) {
+    tips.push("Higher rain chance: bring a waterproof shell and keep essentials in a dry bag.");
+  }
+
+  // Sun/UV (always)
+  tips.push("Sun: wear a sun shirt or UPF layer and use sunscreen. Glare off water burns fast.");
+  tips.push("Bring sunglasses and a hat to reduce glare and eye strain.");
+
+  return tips;
 }
 
 // ----------------------------
@@ -554,17 +697,19 @@ function sunForDate(sunData, dateIso) {
 }
 
 // ----------------------------
-// API: Wind - fetch hourly wind speeds multiple days
+// API: Weather (Wind + Gust + Temp + Rain chance) - hourly, multi-day
+// We keep wind unit mph, temp F.
 // ----------------------------
-async function fetchWindMulti(lat, lon) {
+async function fetchWeatherMulti(lat, lon) {
   const url =
     "https://api.open-meteo.com/v1/forecast" +
     "?latitude=" +
     encodeURIComponent(lat) +
     "&longitude=" +
     encodeURIComponent(lon) +
-    "&hourly=wind_speed_10m" +
+    "&hourly=wind_speed_10m,wind_gusts_10m,temperature_2m,precipitation_probability" +
     "&wind_speed_unit=mph" +
+    "&temperature_unit=fahrenheit" +
     "&forecast_days=7" +
     "&timezone=auto";
 
@@ -573,13 +718,73 @@ async function fetchWindMulti(lat, lon) {
   const hourly = data && data.hourly ? data.hourly : null;
 
   const times = hourly && hourly.time ? hourly.time : [];
-  const speeds = hourly && hourly.wind_speed_10m ? hourly.wind_speed_10m : [];
+  const wind = hourly && hourly.wind_speed_10m ? hourly.wind_speed_10m : [];
+  const gust = hourly && hourly.wind_gusts_10m ? hourly.wind_gusts_10m : [];
+  const temp = hourly && hourly.temperature_2m ? hourly.temperature_2m : [];
+  const rain = hourly && hourly.precipitation_probability ? hourly.precipitation_probability : [];
 
-  // Also try to expose the daily list for date clamping
-  const daily = data && data.daily ? data.daily : null;
-  const dayList = daily && daily.time ? daily.time : [];
+  const dayList = buildDayListFromHourly(times);
 
-  return { times: times, speeds: speeds, days: dayList };
+  return {
+    times: times,
+    wind: wind,
+    gust: gust,
+    temp: temp,
+    rain: rain,
+    days: dayList
+  };
+}
+
+function filterHourlyMultiToDate(w, dateIso) {
+  const out = [];
+  const times = w && w.times ? w.times : [];
+  for (let i = 0; i < times.length; i++) {
+    const t = String(times[i] || "");
+    if (t.slice(0, 10) !== dateIso) continue;
+
+    out.push({
+      dt: new Date(t),
+      wind: Number(w.wind && w.wind[i]),
+      gust: Number(w.gust && w.gust[i]),
+      temp: Number(w.temp && w.temp[i]),
+      rain: Number(w.rain && w.rain[i])
+    });
+  }
+  return out;
+}
+
+function summarizeDay(points) {
+  let maxWind = -Infinity;
+  let maxGust = -Infinity;
+  let minTemp = Infinity;
+  let maxTemp = -Infinity;
+  let maxRain = -Infinity;
+
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+
+    if (Number.isFinite(p.wind) && p.wind > maxWind) maxWind = p.wind;
+    if (Number.isFinite(p.gust) && p.gust > maxGust) maxGust = p.gust;
+
+    if (Number.isFinite(p.temp) && p.temp < minTemp) minTemp = p.temp;
+    if (Number.isFinite(p.temp) && p.temp > maxTemp) maxTemp = p.temp;
+
+    if (Number.isFinite(p.rain) && p.rain > maxRain) maxRain = p.rain;
+  }
+
+  if (!Number.isFinite(maxWind)) maxWind = null;
+  if (!Number.isFinite(maxGust)) maxGust = null;
+  if (!Number.isFinite(minTemp)) minTemp = null;
+  if (!Number.isFinite(maxTemp)) maxTemp = null;
+  if (!Number.isFinite(maxRain)) maxRain = null;
+
+  return {
+    maxWind: maxWind,
+    maxGust: maxGust,
+    minTemp: minTemp,
+    maxTemp: maxTemp,
+    maxRain: maxRain
+  };
 }
 
 // ----------------------------
@@ -706,12 +911,19 @@ function drawWindLineChart(canvas, points) {
   ctx.textAlign = "left";
 }
 
+// -------- END OF PART 1 OF 3 --------
+// Part 2 will update the Wind page UI:
+// - Rename nav button label to Weather/Wind (in header/nav)
+// - Add temp + rain side-by-side above chart
+// - Add sustained + gust side-by-side above chart
+// - Add GO/CAUTION/NO-GO meter bar + explanation
+// - Add exposure tips section (drysuit, sun shirts, sunscreen, etc.)
 // ----------------------------
 // UI: Header + Nav
 // ----------------------------
 const PAGE_TITLES = {
   "Best fishing times": "Best Fishing Times",
-  "Wind forecast": "Wind Forecast",
+  "Wind forecast": "Weather and Wind",
   "Trolling depth calculator": "Trolling Depth Calculator",
   "Species tips": "Species Tips",
   Speedometer: "Speedometer"
@@ -751,7 +963,7 @@ function renderHeaderAndNav() {
   const nav = document.getElementById("nav");
   const items = [
     ["Times", "Best fishing times"],
-    ["Wind", "Wind forecast"],
+    ["Weather/Wind", "Wind forecast"],
     ["Depth", "Trolling depth calculator"],
     ["Tips", "Species tips"],
     ["Speed", "Speedometer"]
@@ -1081,8 +1293,8 @@ function renderWindPage() {
   const page = pageEl();
   page.innerHTML =
     '<div class="card">' +
-    "  <h2>Wind Forecast</h2>" +
-    '  <div class="small">Auto-displays winds after location is acquired. Includes a date picker.</div>' +
+    "  <h2>Weather and Wind</h2>" +
+    '  <div class="small">Auto-displays after location is acquired. Includes GO/CAUTION/NO-GO plus exposure tips.</div>' +
     "</div>";
 
   appendHtml(
@@ -1102,7 +1314,7 @@ function renderWindPage() {
   if (!isIsoDate(state.windDate)) state.windDate = isoTodayLocal();
 
   function onResolved() {
-    autoDisplayWinds();
+    autoDisplayWeatherWind();
   }
 
   appendHtml(
@@ -1110,18 +1322,38 @@ function renderWindPage() {
     `
     <div class="small"><strong>Date</strong></div>
     <input id="wind_date" type="date" value="${escHtml(state.windDate)}" />
-    <div class="small" style="margin-top:8px;">Chart is hourly for the selected date (7-day window).</div>
+    <div class="small" style="margin-top:8px;">Wind chart is sustained wind (mph) for the selected date (7-day window).</div>
   `
   );
 
   document.getElementById("wind_date").addEventListener("change", function (e) {
     state.windDate = String(e.target.value || "").slice(0, 10);
-    autoDisplayWinds();
+    autoDisplayWeatherWind();
   });
 
   renderLocationPicker(controls, "wind", onResolved);
 
-  async function autoDisplayWinds() {
+  function fmtTempRange(minF, maxF) {
+    if (!Number.isFinite(minF) && !Number.isFinite(maxF)) return "--";
+    if (Number.isFinite(minF) && Number.isFinite(maxF)) {
+      return Math.round(minF) + " to " + Math.round(maxF) + " F";
+    }
+    if (Number.isFinite(maxF)) return "Up to " + Math.round(maxF) + " F";
+    return "Down to " + Math.round(minF) + " F";
+  }
+
+  function fmtMph(x) {
+    if (!Number.isFinite(x)) return "--";
+    return x.toFixed(0) + " mph";
+  }
+
+  function fmtPct(x) {
+    if (!Number.isFinite(x)) return "--";
+    const v = Math.max(0, Math.min(100, Math.round(x)));
+    return v + " %";
+  }
+
+  async function autoDisplayWeatherWind() {
     out.innerHTML = "";
 
     if (!hasResolvedLocation()) {
@@ -1131,45 +1363,156 @@ function renderWindPage() {
 
     out.textContent = "Loading...";
     try {
-      const w = await fetchWindMulti(state.lat, state.lon);
-      const chosenDate = clampDateToDailyList(state.windDate, w.days && w.days.length ? w.days : [isoTodayLocal()]);
+      const w = await fetchWeatherMulti(state.lat, state.lon);
+      const chosenDate = clampDateToDailyList(
+        state.windDate,
+        w.days && w.days.length ? w.days : [isoTodayLocal()]
+      );
       state.windDate = chosenDate;
 
       const inp = document.getElementById("wind_date");
       if (inp && inp.value !== chosenDate) inp.value = chosenDate;
 
-      const pts = filterHourlyToDate(w.times, w.speeds, chosenDate);
+      const pts = filterHourlyMultiToDate(w, chosenDate);
+      const summary = summarizeDay(pts);
 
-      // Build chart series
-      const series = pts.map(function (p) {
-        return { dt: p.dt, mph: p.v };
-      });
+      const maxSust = summary.maxWind;
+      const maxGust = summary.maxGust;
+      const tMin = summary.minTemp;
+      const tMax = summary.maxTemp;
+      const rainMax = summary.maxRain;
 
-      // Build hour list (compact)
+      const rating = classifyGoCautionNoGo(maxSust, maxGust);
+      const tips = exposureTips(tMin, tMax, rainMax);
+
+      // Series for chart (sustained wind)
+      const series = pts
+        .map(function (p) {
+          return { dt: p.dt, mph: Number(p.wind) };
+        })
+        .filter(function (p) {
+          return Number.isFinite(p.mph);
+        });
+
+      // First 24 hours list (include sustained + gust)
       const list = pts.slice(0, 24).map(function (p) {
         const label = p.dt.toLocaleTimeString([], { hour: "numeric" });
-        return label + ": <strong>" + String(p.v.toFixed(1)) + " mph</strong>";
+        const sust = Number.isFinite(p.wind) ? p.wind.toFixed(1) : "--";
+        const gust = Number.isFinite(p.gust) ? p.gust.toFixed(1) : "--";
+        return (
+          label +
+          ": <strong>" +
+          sust +
+          " mph</strong> sustained, <strong>" +
+          gust +
+          " mph</strong> gust"
+        );
       });
 
+      // Badge class
+      const badgeClass =
+        rating.color === "go"
+          ? "badgeGo"
+          : rating.color === "nog"
+          ? "badgeNoGo"
+          : "badgeCaution";
+
+      // Build the output HTML
       let html = "";
+
+      // Overview stats ABOVE the chart (two rows, two columns)
       html +=
         '<div class="card compact">' +
-        '<div class="small"><strong>Hourly wind (mph) - ' + escHtml(chosenDate) + "</strong></div>" +
+        '<div class="small"><strong>Overview - ' +
+        escHtml(chosenDate) +
+        "</strong></div>" +
+
+        // Row: temp + rain
+        '<div class="row2">' +
+        '  <div class="statBox">' +
+        '    <div class="statLabel">Temperature</div>' +
+        '    <div class="statValue">' +
+        escHtml(fmtTempRange(tMin, tMax)) +
+        "</div>" +
+        "  </div>" +
+        '  <div class="statBox">' +
+        '    <div class="statLabel">Rain chance (max)</div>' +
+        '    <div class="statValue">' +
+        escHtml(fmtPct(rainMax)) +
+        "</div>" +
+        "  </div>" +
+        "</div>" +
+
+        // Row: sustained + gust
+        '<div class="row2">' +
+        '  <div class="statBox">' +
+        '    <div class="statLabel">Max sustained wind</div>' +
+        '    <div class="statValue">' +
+        escHtml(fmtMph(maxSust)) +
+        "</div>" +
+        "  </div>" +
+        '  <div class="statBox">' +
+        '    <div class="statLabel">Max gust</div>' +
+        '    <div class="statValue">' +
+        escHtml(fmtMph(maxGust)) +
+        "</div>" +
+        "  </div>" +
+        "</div>" +
+
+        // Meter
+        '<div class="meterWrap">' +
+        '  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">' +
+        '    <div class="small"><strong>Boating / Kayak status</strong></div>' +
+        '    <div class="meterBadge ' +
+        escHtml(badgeClass) +
+        '">' +
+        escHtml(rating.level) +
+        "</div>" +
+        "  </div>" +
+        '  <div class="meterBar" style="margin-top:8px;">' +
+        '    <div class="meterSegGo"></div>' +
+        '    <div class="meterSegCaution"></div>' +
+        '    <div class="meterSegNoGo"></div>' +
+        "  </div>" +
+        '  <div class="small" style="margin-top:8px;">' +
+        escHtml(rating.reason) +
+        "</div>" +
+        "</div>" +
+        "</div>";
+
+      // Exposure section (includes sunscreen mention)
+      html +=
+        '<div class="card compact">' +
+        '<div class="small"><strong>Exposure tips</strong></div>' +
+        '<ul class="list" style="margin-top:8px;">' +
+        (tips && tips.length
+          ? tips.map(function (t) { return "<li>" + escHtml(t) + "</li>"; }).join("")
+          : "<li>Use layers, keep dry gear in a dry bag, and watch conditions.</li>") +
+        "</ul>" +
+        '<div class="small" style="margin-top:8px;">Always check local conditions, your skill level, and your gear before launching.</div>' +
+        "</div>";
+
+      // Chart card
+      html +=
+        '<div class="card compact">' +
+        '<div class="small"><strong>Sustained wind (mph) - hourly chart</strong></div>' +
         '<div class="chartWrap" style="margin-top:8px;">' +
         '<canvas id="wind_chart" class="windChart"></canvas>' +
         "</div>" +
         '<div class="small" style="margin-top:8px;">Times are local. If chart is blank, try another date.</div>' +
         "</div>";
 
+      // List card
       html +=
         '<div class="card compact">' +
-        '<div class="small"><strong>First 24 hours listed</strong></div>' +
+        '<div class="small"><strong>First 24 hours listed (sustained + gust)</strong></div>' +
         '<div style="margin-top:8px;">' +
-        (list.length ? list.join("<br>") : "No hourly wind returned for this date.") +
+        (list.length ? list.join("<br>") : "No hourly data returned for this date.") +
         "</div></div>";
 
       out.innerHTML = html;
 
+      // Draw chart (sustained)
       const c = document.getElementById("wind_chart");
       if (c && series && series.length >= 2) {
         drawWindLineChart(c, series);
@@ -1184,7 +1527,6 @@ function renderWindPage() {
           }, 120);
         });
       } else {
-        // If not enough points, write a small hint inside the canvas container area
         const wrap = document.querySelector(".chartWrap");
         if (wrap) {
           wrap.insertAdjacentHTML(
@@ -1194,15 +1536,16 @@ function renderWindPage() {
         }
       }
     } catch (e) {
-      out.textContent = "Could not load wind. Try again.";
+      out.textContent = "Could not load weather/wind. Try again.";
     }
   }
 
-  autoDisplayWinds();
+  autoDisplayWeatherWind();
 }
 
-// -------- END OF FIRST HALF --------
-// Next chunk starts at: renderTrollingDepthPage() and continues to boot().
+// -------- END OF PART 2 OF 3 --------
+// Part 3 will include the remaining pages (Depth, Tips, Speedometer),
+// the render router, and boot(), updated as needed to keep everything consistent.
 function renderTrollingDepthPage() {
   const page = pageEl();
   page.innerHTML = `

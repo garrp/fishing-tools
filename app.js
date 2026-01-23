@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_VERSION = "1.0.10";
+const APP_VERSION = "1.0.z";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 

@@ -1,34 +1,30 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#8fd19e">
-  <title>FishyNW.com | Fishing Tools</title>
-  <meta name="description" content="FishyNW fishing tools: best fishing times, weather and wind, trolling depth, species tips, and GPS speedometer.">
-
-  <!-- Optional: basic social preview (safe defaults) -->
-  <meta property="og:title" content="FishyNW.com | Fishing Tools">
-  <meta property="og:description" content="Best fishing times, weather and wind, trolling depth, species tips, and GPS speedometer.">
-  <meta property="og:type" content="website">
-  <meta property="og:image" content="https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png">
-
-  <!-- No external CSS required (app.js injects styles) -->
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FishyNW | Weather, Wind, Best Times + Tools</title>
+  <meta name="description" content="FishyNW: Weather, wind, best fishing times, trolling depth, and GPS speed." />
+  <meta name="theme-color" content="#8fd19e" />
+  <style>
+    /* Keep the page clean. app.js injects all the styling you need. */
+    html, body { height: 100%; }
+    body { margin: 0; }
+    /* If app.js fails to load, at least show a readable message */
+    #appFallback {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      padding: 16px;
+    }
+  </style>
 </head>
-
 <body>
-  <!-- App root (REQUIRED to match app.js) -->
-  <main id="app"></main>
-<section class="card">
-  ...
-</section>
+  <main id="app">
+    <div id="appFallback">
+      Loading FishyNW tools... If this stays here, make sure <b>app.js</b> is in the same folder as this file.
+    </div>
+  </main>
 
-  <!-- App script (REQUIRED to match app.js boot logic) -->
-  <script src="app.js" defer></script>
-
-  <!-- Note:
-       - GA4 loads only after consent inside app.js
-       - All styling is injected by app.js
-  -->
+  <!-- Load your single-file app -->
+  <script src="app.js"></script>
 </body>
 </html>

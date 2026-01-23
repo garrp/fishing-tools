@@ -1,6 +1,6 @@
 // app.js
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.4
+// Version 1.0.5
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 
 "use strict";
@@ -19,12 +19,13 @@
   - Reverse geocodes GPS lat/lon to a nearest city label when possible.
   - On mobile: header stacks, nav is a clean 2-column grid.
   - Location is saved to localStorage and restored on next visit.
-  - Best Times auto-displays after location is acquired and no button is shown (v1.0.4).
+  - Best Times auto-displays after location is acquired and no button is shown.
   - Wind auto-displays after location is acquired and no button is shown.
+  - Wind page includes a simple line chart (canvas) for the next 24 hours (mobile-friendly).
   - GA4 loads ONLY after user accepts the consent banner.
 */
 
-const APP_VERSION = "1.0.4";
+const APP_VERSION = "1.0.5";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -166,6 +167,14 @@ function loadLastLocation() {
   }
 }
 
+function clearLastLocation() {
+  try {
+    localStorage.removeItem(LAST_LOC_KEY);
+  } catch (e) {
+    // ignore
+  }
+}
+
 // ----------------------------
 // Shared state
 // ----------------------------
@@ -274,6 +283,17 @@ let app = null;
   .list { margin: 8px 0 0 18px; }
   .list li { margin-bottom: 6px; }
 
+  /* Wind chart */
+  .chartWrap { margin-top: 10px; }
+  canvas.windChart {
+    width: 100%;
+    height: 180px;
+    display: block;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.7);
+    border: 1px solid rgba(0,0,0,0.12);
+  }
+
   /* Consent banner */
   .consentBar {
     position: fixed;
@@ -333,6 +353,8 @@ let app = null;
     .nav { grid-template-columns: repeat(2, 1fr); gap:10px; }
 
     .card { padding: 12px; border-radius: 14px; }
+
+    canvas.windChart { height: 160px; }
 
     .consentInner { flex-direction: column; align-items: stretch; }
     .consentBtns { justify-content: stretch; min-width: 0; }
@@ -527,6 +549,164 @@ function splitCurrentFutureWind(times, speeds) {
   };
 }
 
+function nextHoursWindSeries(times, speeds, hours) {
+  const now = new Date();
+  const end = new Date(now.getTime() + (hours || 24) * 60 * 60 * 1000);
+
+  const series = [];
+  for (let i = 0; i < times.length; i++) {
+    const dt = new Date(times[i]);
+    if (!(dt >= now && dt <= end)) continue;
+
+    const mph = Number(speeds[i]);
+    if (!Number.isFinite(mph)) continue;
+
+    series.push({ dt: dt, mph: mph });
+  }
+
+  // If API time spacing or timezone parsing causes weird empties, fallback to first 24 future points
+  if (series.length < 6) {
+    const future = [];
+    for (let j = 0; j < times.length; j++) {
+      const dt2 = new Date(times[j]);
+      if (dt2 < now) continue;
+      const mph2 = Number(speeds[j]);
+      if (!Number.isFinite(mph2)) continue;
+      future.push({ dt: dt2, mph: mph2 });
+      if (future.length >= 24) break;
+    }
+    return future;
+  }
+
+  return series;
+}
+
+// ----------------------------
+// Simple canvas line chart (wind)
+// ----------------------------
+function drawWindLineChart(canvas, points) {
+  if (!canvas || !canvas.getContext) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const cssW = canvas.clientWidth || 600;
+  const cssH = canvas.clientHeight || 180;
+  const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const padL = 36;
+  const padR = 10;
+  const padT = 10;
+  const padB = 24;
+
+  const w = cssW - padL - padR;
+  const h = cssH - padT - padB;
+
+  if (!points || points.length < 2 || w <= 10 || h <= 10) {
+    ctx.fillStyle = "rgba(0,0,0,0.75)";
+    ctx.font = "13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+    ctx.fillText("Not enough data for chart.", 12, 22);
+    return;
+  }
+
+  let minV = Infinity;
+  let maxV = -Infinity;
+  for (let i = 0; i < points.length; i++) {
+    const v = Number(points[i].mph);
+    if (!Number.isFinite(v)) continue;
+    if (v < minV) minV = v;
+    if (v > maxV) maxV = v;
+  }
+
+  if (!Number.isFinite(minV) || !Number.isFinite(maxV)) return;
+
+  // Add headroom so line is not pinned to top/bottom
+  const range = Math.max(1, maxV - minV);
+  const extra = range * 0.15;
+  minV = Math.max(0, minV - extra);
+  maxV = maxV + extra;
+
+  function xFor(i) {
+    return padL + (i / (points.length - 1)) * w;
+  }
+  function yFor(v) {
+    const t = (v - minV) / (maxV - minV);
+    return padT + (1 - t) * h;
+  }
+
+  // Grid lines (3)
+  ctx.strokeStyle = "rgba(0,0,0,0.10)";
+  ctx.lineWidth = 1;
+  for (let g = 0; g <= 2; g++) {
+    const yy = padT + (g / 2) * h;
+    ctx.beginPath();
+    ctx.moveTo(padL, yy);
+    ctx.lineTo(padL + w, yy);
+    ctx.stroke();
+  }
+
+  // Y labels (top/mid/bot)
+  ctx.fillStyle = "rgba(0,0,0,0.70)";
+  ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+  const yTop = maxV;
+  const yMid = (minV + maxV) / 2;
+  const yBot = minV;
+
+  ctx.fillText(String(Math.round(yTop)) + " mph", 6, padT + 12);
+  ctx.fillText(String(Math.round(yMid)) + " mph", 6, padT + h / 2 + 4);
+  ctx.fillText(String(Math.round(yBot)) + " mph", 6, padT + h + 4);
+
+  // Line path
+  ctx.strokeStyle = "rgba(7,27,31,0.75)";
+  ctx.lineWidth = 2;
+
+  ctx.beginPath();
+  ctx.moveTo(xFor(0), yFor(points[0].mph));
+  for (let i2 = 1; i2 < points.length; i2++) {
+    ctx.lineTo(xFor(i2), yFor(points[i2].mph));
+  }
+  ctx.stroke();
+
+  // Small dots
+  ctx.fillStyle = "rgba(7,27,31,0.70)";
+  for (let d = 0; d < points.length; d++) {
+    const xx = xFor(d);
+    const yy2 = yFor(points[d].mph);
+    ctx.beginPath();
+    ctx.arc(xx, yy2, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // X labels (start, mid, end)
+  function hourLabel(dt) {
+    try {
+      return dt.toLocaleTimeString([], { hour: "numeric" });
+    } catch (e) {
+      return "";
+    }
+  }
+  const iStart = 0;
+  const iMid = Math.floor((points.length - 1) / 2);
+  const iEnd = points.length - 1;
+
+  ctx.fillStyle = "rgba(0,0,0,0.70)";
+  ctx.textAlign = "left";
+  ctx.fillText(hourLabel(points[iStart].dt), padL, padT + h + 18);
+
+  ctx.textAlign = "center";
+  ctx.fillText(hourLabel(points[iMid].dt), xFor(iMid), padT + h + 18);
+
+  ctx.textAlign = "right";
+  ctx.fillText(hourLabel(points[iEnd].dt), padL + w, padT + h + 18);
+
+  ctx.textAlign = "left";
+}
+
 // ----------------------------
 // UI: Header + Nav
 // ----------------------------
@@ -626,6 +806,10 @@ function renderLocationPicker(container, placeKey, onResolved) {
 
       <div id="${placeKey}_matches" style="margin-top:10px;"></div>
       <div id="${placeKey}_using" class="small" style="margin-top:10px;"></div>
+
+      <div style="margin-top:10px;">
+        <button id="${placeKey}_clear" type="button" class="consentDecline">Clear saved location</button>
+      </div>
     </div>
   `
   );
@@ -633,6 +817,22 @@ function renderLocationPicker(container, placeKey, onResolved) {
   const usingEl = document.getElementById(placeKey + "_using");
   const matchesEl = document.getElementById(placeKey + "_matches");
   const placeInput = document.getElementById(placeKey + "_place");
+
+  document.getElementById(placeKey + "_clear").addEventListener("click", function () {
+    clearLastLocation();
+
+    state.lat = null;
+    state.lon = null;
+    state.placeLabel = "";
+    state.matches = [];
+    state.selectedIndex = 0;
+
+    matchesEl.innerHTML = "";
+    placeInput.value = "";
+    usingEl.textContent = "Saved location cleared. Search a place or use your location.";
+
+    if (typeof onResolved === "function") onResolved("cleared");
+  });
 
   if (hasResolvedLocation()) {
     const lbl = state.placeLabel
@@ -876,7 +1076,20 @@ function renderWindPage() {
       const w = await fetchWind(state.lat, state.lon);
       const parts = splitCurrentFutureWind(w.times, w.speeds);
 
+      // Chart series: next 24 hours (mobile-friendly)
+      const series = nextHoursWindSeries(w.times, w.speeds, 24);
+
       let html = "";
+
+      html +=
+        '<div class="card compact">' +
+        '<div class="small"><strong>Next 24 hours (mph)</strong></div>' +
+        '<div class="chartWrap" style="margin-top:8px;">' +
+        '<canvas id="wind_chart" class="windChart"></canvas>' +
+        "</div>" +
+        '<div class="small" style="margin-top:8px;">Line chart is hourly. Times are local.</div>' +
+        "</div>";
+
       if (parts.current.length) {
         html +=
           '<div class="card compact"><div class="small"><strong>Current winds</strong></div><div style="margin-top:8px;">';
@@ -904,6 +1117,23 @@ function renderWindPage() {
       }
 
       out.innerHTML = html || "No wind data returned.";
+
+      // Draw chart after HTML is in the DOM
+      const c = document.getElementById("wind_chart");
+      if (c && series && series.length >= 2) {
+        drawWindLineChart(c, series);
+
+        // Redraw on resize (simple, lightweight)
+        let resizeTimer = null;
+        window.addEventListener("resize", function () {
+          if (!document.getElementById("wind_chart")) return;
+          if (resizeTimer) clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(function () {
+            const c2 = document.getElementById("wind_chart");
+            if (c2) drawWindLineChart(c2, series);
+          }, 120);
+        });
+      }
     } catch (e) {
       out.textContent = "Could not load wind. Try again.";
     }
@@ -1014,13 +1244,26 @@ function speciesDb() {
   return {
     Kokanee: {
       temp: "42 to 55 F",
-      baits: ["Small hoochies", "Small spinners (wedding ring)", "Corn with scent (where used)"],
+      baits: [
+        "Small hoochies",
+        "Small spinners (wedding ring)",
+        "Corn with scent (where used)"
+      ],
       rigs: ["Dodger + leader + hoochie/spinner", "Weights or downrigger to match marks"],
-      Mid: ["Troll dodger plus small hoochie or spinner behind it.", "Run scent and tune speed until you get a steady rod thump."]
+      Mid: [
+        "Troll dodger plus small hoochie or spinner behind it.",
+        "Run scent and tune speed until you get a steady rod thump."
+      ]
     },
     "Rainbow trout": {
       temp: "45 to 65 F",
-      baits: ["Small spoons", "Inline spinners", "Floating minnows", "Worms (where legal)", "PowerBait (where legal)"],
+      baits: [
+        "Small spoons",
+        "Inline spinners",
+        "Floating minnows",
+        "Worms (where legal)",
+        "PowerBait (where legal)"
+      ],
       rigs: ["Cast and retrieve", "Trolling with long leads", "Slip sinker bait rig (near bottom)"],
       Top: ["When they are up, cast small spinners, spoons, or floating minnows."],
       Mid: ["Troll small spoons or spinners at 1.2 to 1.8 mph."],
@@ -1042,7 +1285,15 @@ function speciesDb() {
     },
     "Smallmouth bass": {
       temp: "60 to 75 F",
-      baits: ["Walking baits", "Poppers", "Jerkbaits", "Swimbaits", "Ned rigs", "Tubes", "Drop shot plastics"],
+      baits: [
+        "Walking baits",
+        "Poppers",
+        "Jerkbaits",
+        "Swimbaits",
+        "Ned rigs",
+        "Tubes",
+        "Drop shot plastics"
+      ],
       rigs: ["Ned rig", "Drop shot", "Tube jig"],
       Top: ["Walking baits and poppers early and late."],
       Mid: ["Jerkbaits and swimbaits around rocks and shade."],
@@ -1058,8 +1309,17 @@ function speciesDb() {
     },
     Walleye: {
       temp: "55 to 70 F",
-      baits: ["Crankbaits (trolling)", "Jigs with soft plastics", "Jigs with crawler (where used)", "Blade baits"],
-      rigs: ["Jig and soft plastic", "Bottom bouncer + harness (where used)", "Trolling crankbaits on breaks"],
+      baits: [
+        "Crankbaits (trolling)",
+        "Jigs with soft plastics",
+        "Jigs with crawler (where used)",
+        "Blade baits"
+      ],
+      rigs: [
+        "Jig and soft plastic",
+        "Bottom bouncer + harness (where used)",
+        "Trolling crankbaits on breaks"
+      ],
       Mid: ["Troll crankbaits along breaks at dusk and dawn."],
       Bottom: ["Jig near bottom on transitions and edges."]
     },
@@ -1081,7 +1341,9 @@ function speciesDb() {
       temp: "65 to 85 F",
       baits: ["Cut bait", "Worms", "Stink bait", "Chicken liver (where used)"],
       rigs: ["Slip sinker / Carolina rig", "Santee Cooper style (float bait slightly)"],
-      Bottom: ["Soak bait on scent trails. Target holes, outside bends, slow water near current."]
+      Bottom: [
+        "Soak bait on scent trails. Target holes, outside bends, slow water near current."
+      ]
     }
   };
 }

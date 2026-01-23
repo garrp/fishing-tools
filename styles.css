@@ -163,3 +163,23 @@ select {
   font-size: 0.95rem;
   opacity: 0.85;
 }
+  .hourList { margin-top: 10px; }
+  .hourRow {
+    display: grid;
+    grid-template-columns: 120px 1fr 52px;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,0.10);
+    background: rgba(0,0,0,0.02);
+    margin-top: 8px;
+  }
+  .hourTime { font-weight: 900; }
+  .hourWind { font-weight: 900; }
+  .hourWind span { font-weight: 700; opacity: 0.75; }
+  .hourDir { text-align: right; font-weight: 900; opacity: 0.85; }
+
+  @media (max-width: 520px) {
+    .hourRow { grid-template-columns: 98px 1fr 44px; }
+  }

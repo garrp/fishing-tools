@@ -1,7 +1,7 @@
 // ============================
-// app.js (PART 1 OF 2) BEGIN
+// app.js (PART 1 OF 3) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.8
+// Version 1.0.9
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -15,19 +15,18 @@
     <script src="app.js" defer></script>
 
   Notes:
-  - Uses Open-Meteo for sunrise/sunset, wind, temps, and precip chance.
+  - Uses Open-Meteo for sunrise/sunset and weather/wind.
   - Uses Open-Meteo Geocoding for place search.
   - Uses browser geolocation for "Use my location".
   - Location is saved to localStorage and restored on next visit.
-  - Home page merges Weather/Wind + Best Times with ONE shared date picker.
-  - Home auto-displays weather and best times after location is acquired.
-  - Wind chart is hourly (canvas) for selected date.
-  - GO / CAUTION / NO-GO meter uses craft + water type + wind and cold.
-  - Exposure tips adapt to conditions (cold vs hot) and always mention sunscreen.
+  - Home merges Weather/Wind + Best Times with ONE shared date picker.
   - GA4 loads ONLY after user accepts the consent banner.
+  - Clear saved location button removed.
+  - Saved location auto-clears if user edits the location input.
+  - Place input normalizes "City, st" (state casing ignored).
 */
 
-const APP_VERSION = "1.0.8";
+const APP_VERSION = "1.0.9";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -92,6 +91,7 @@ function renderConsentBannerIfNeeded() {
     return;
   }
   if (consent === "denied") return;
+
   if (document.getElementById("consent_bar")) return;
 
   try {
@@ -137,11 +137,7 @@ const LAST_LOC_KEY = "fishynw_last_location_v2"; // {lat:number, lon:number, lab
 function saveLastLocation(lat, lon, label) {
   try {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-    const payload = {
-      lat: Number(lat),
-      lon: Number(lon),
-      label: String(label || "")
-    };
+    const payload = { lat: Number(lat), lon: Number(lon), label: String(label || "") };
     localStorage.setItem(LAST_LOC_KEY, JSON.stringify(payload));
   } catch (e) {
     // ignore
@@ -184,12 +180,12 @@ const state = {
   selectedIndex: 0,
   speedWatchId: null,
 
-  // ONE shared date picker (YYYY-MM-DD)
+  // Single shared date for Home (YYYY-MM-DD)
   dateIso: "",
 
-  // Home safety inputs
-  waterType: "Small / protected", // "Small / protected" | "Big water / offshore"
-  craft: "Kayak (paddle)" // "Kayak (paddle)" | "Kayak (motorized)" | "Boat (small)"
+  // Options for go/caution/no-go
+  waterType: "Small / protected",
+  craft: "Kayak (paddle)"
 };
 
 // ----------------------------
@@ -204,29 +200,29 @@ let app = null;
   const css = `
   :root {
     --green:#8fd19e; --green2:#7cc78f; --greenBorder:#6fbf87; --text:#0b2e13;
-    --card: rgba(0,0,0,0.03);
-    --cardBorder: rgba(0,0,0,0.14);
+    --card:#f2f3f4; --stroke:rgba(0,0,0,0.14);
+    --muted:rgba(0,0,0,0.62);
   }
 
   * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#fff; }
 
   .wrap { max-width: 760px; margin: 0 auto; padding: 12px 12px 36px 12px; }
 
   .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:6px; }
   .logo { max-width: 60%; }
-  .logo img { width: 100%; max-width: 240px; height: auto; display:block; }
+  .logo img { width: 100%; max-width: 260px; height: auto; display:block; }
 
   .title { text-align:right; font-weight:900; font-size:18px; line-height:20px; }
-  .small { opacity:0.82; font-size: 13px; }
-  .muted { opacity:0.72; }
+  .small { font-size: 13px; opacity:0.92; }
+  .muted { color: var(--muted); }
 
-  .nav { margin-top: 12px; margin-bottom: 10px; display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .nav { margin-top: 12px; margin-bottom: 10px; display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 
   .navBtn {
     width:100%;
-    padding:12px 12px;
-    border-radius:12px;
+    padding:10px 12px;
+    border-radius:10px;
     border:1px solid var(--greenBorder);
     background: var(--green);
     color: var(--text);
@@ -235,31 +231,37 @@ let app = null;
   }
   .navBtn:hover { background: var(--green2); }
   .navBtn:active { background: #6bbb83; }
+  .navBtnActive {
+    background: #e9f6ee;
+    border-color: rgba(0,0,0,0.18);
+    color: rgba(0,0,0,0.78);
+    cursor: default;
+  }
 
   .card {
     border-radius: 16px;
     padding: 14px;
     margin-top: 12px;
-    border: 1px solid var(--cardBorder);
+    border: 1px solid var(--stroke);
     background: var(--card);
   }
-  .compact { margin-top: 10px; padding: 12px 14px; }
+  .compact { margin-top: 10px; padding: 12px 14px; background: rgba(0,0,0,0.03); }
 
-  h2 { margin: 0 0 6px 0; font-size: 20px; }
+  h2 { margin: 0 0 6px 0; font-size: 18px; }
   h3 { margin: 0 0 8px 0; font-size: 16px; }
 
   input, select {
     width:100%;
-    padding:12px 12px;
+    padding:10px;
     border-radius:12px;
-    border:1px solid rgba(0,0,0,0.14);
+    border:1px solid var(--stroke);
     font-size:16px;
-    background: rgba(255,255,255,0.85);
+    background:#fff;
   }
 
   button {
     width:100%;
-    padding:12px 12px;
+    padding:10px 12px;
     border-radius:12px;
     border:1px solid var(--greenBorder);
     background: var(--green);
@@ -277,7 +279,7 @@ let app = null;
   .footer {
     margin-top: 22px;
     padding-top: 14px;
-    border-top: 1px solid rgba(0,0,0,0.14);
+    border-top: 1px solid var(--stroke);
     text-align:center;
     font-size: 13px;
     opacity:0.90;
@@ -287,21 +289,50 @@ let app = null;
   .list { margin: 8px 0 0 18px; }
   .list li { margin-bottom: 6px; }
 
-  /* Home controls grid (date + selects) */
-  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-  .fieldLabel { margin: 0 0 6px 0; font-weight: 900; font-size: 13px; opacity: 0.9; }
+  .fieldLabel { font-size: 13px; font-weight: 900; opacity:0.86; margin-bottom:6px; }
 
-  /* Weather tiles grid */
-  .tilesGrid { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid3 { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+  /* Weather tiles in a tight grid */
+  .tilesGrid { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
   .tile {
-    border-radius: 14px;
-    border: 1px solid rgba(0,0,0,0.12);
-    background: rgba(255,255,255,0.75);
+    background:#fff;
+    border:1px solid var(--stroke);
+    border-radius:14px;
     padding: 12px;
   }
-  .tileTop { font-size: 13px; opacity: 0.78; font-weight: 900; }
-  .tileVal { font-size: 22px; font-weight: 900; margin-top: 6px; }
-  .tileSub { font-size: 12px; opacity: 0.72; margin-top: 4px; }
+  .tileTop { font-size: 13px; font-weight: 900; opacity:0.8; }
+  .tileVal { margin-top:8px; font-size: 24px; font-weight: 900; }
+  .tileSub { margin-top:6px; font-size: 12px; opacity:0.75; }
+
+  /* GO / CAUTION / NO-GO meter */
+  .statusRow { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px; }
+  .pill {
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-weight: 900;
+    border: 1px solid rgba(0,0,0,0.14);
+    background: rgba(0,0,0,0.04);
+    min-width: 88px;
+    text-align:center;
+  }
+
+  .meterBar { margin-top:10px; height: 16px; border-radius: 999px; overflow:hidden; border: 1px solid rgba(0,0,0,0.12); display:flex; }
+  .meterSeg { height:100%; }
+  .segG { width:34%; background: rgba(143,209,158,0.8); }
+  .segY { width:33%; background: rgba(255,214,102,0.85); }
+  .segR { width:33%; background: rgba(244,163,163,0.88); }
+
+  .meterNeedle {
+    position:absolute;
+    top:-7px;
+    width: 0; height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 12px solid rgba(0,0,0,0.72);
+    transform: translateX(-8px);
+  }
 
   /* Wind chart */
   .chartWrap { margin-top: 10px; }
@@ -310,41 +341,8 @@ let app = null;
     height: 180px;
     display: block;
     border-radius: 12px;
-    background: rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.9);
     border: 1px solid rgba(0,0,0,0.12);
-  }
-
-  /* Go/Caution/No-Go meter */
-  .statusRow { display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-top: 10px; }
-  .pill {
-    padding: 8px 12px;
-    border-radius: 999px;
-    font-weight: 900;
-    border: 1px solid rgba(0,0,0,0.14);
-    background: rgba(255,255,255,0.75);
-    min-width: 70px;
-    text-align:center;
-  }
-  .meterBar {
-    height: 14px;
-    border-radius: 999px;
-    border: 1px solid rgba(0,0,0,0.14);
-    overflow:hidden;
-    background: rgba(255,255,255,0.7);
-    display:flex;
-    margin-top: 10px;
-  }
-  .meterSeg { flex: 1; }
-  .segG { background: rgba(143,209,158,0.95); }
-  .segY { background: rgba(255,214,102,0.95); }
-  .segR { background: rgba(244,163,163,0.95); }
-  .meterNeedle {
-    height: 18px;
-    width: 3px;
-    border-radius: 2px;
-    background: rgba(0,0,0,0.75);
-    position: relative;
-    top: -16px;
   }
 
   /* Consent banner */
@@ -353,7 +351,7 @@ let app = null;
     left: 0; right: 0; bottom: 0;
     padding: 12px;
     background: rgba(255,255,255,0.98);
-    border-top: 1px solid rgba(0,0,0,0.14);
+    border-top: 1px solid var(--stroke);
     z-index: 9999;
   }
   .consentInner {
@@ -365,25 +363,8 @@ let app = null;
     justify-content: space-between;
   }
   .consentText { font-size: 13px; line-height: 16px; opacity: 0.92; }
-  .consentBtns {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    min-width: 240px;
-  }
-  .consentBtn {
-    width: auto;
-    padding: 10px 12px;
-    border-radius: 10px;
-    border: 1px solid var(--greenBorder);
-    background: var(--green);
-    color: var(--text);
-    font-weight: 900;
-    cursor: pointer;
-  }
-  .consentBtn:hover { background: var(--green2); }
-  .consentBtn:active { background: #6bbb83; }
+  .consentBtns { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; min-width:240px; }
+  .consentBtn { width:auto; padding:10px 12px; border-radius:12px; }
   .consentDecline {
     background: #f4a3a3 !important;
     border-color: #e48f8f !important;
@@ -394,12 +375,17 @@ let app = null;
   @media (max-width: 520px) {
     .wrap { padding: 10px 10px 30px 10px; }
     .header { flex-direction: column; align-items:center; justify-content:center; gap:8px; }
-    .logo { max-width: 85%; }
-    .logo img { max-width: 240px; margin: 0 auto; }
+    .logo { max-width: 88%; }
+    .logo img { max-width: 280px; margin: 0 auto; }
     .title { text-align:center; font-size: 18px; }
+
     .nav { grid-template-columns: repeat(2, 1fr); gap:10px; }
-    .card { padding: 12px; border-radius: 14px; }
+
+    .grid2 { grid-template-columns: 1fr 1fr; }
+    .tilesGrid { grid-template-columns: 1fr 1fr; }
+
     canvas.windChart { height: 160px; }
+
     .consentInner { flex-direction: column; align-items: stretch; }
     .consentBtns { justify-content: stretch; min-width: 0; }
     .consentBtn { width: 100%; }
@@ -422,8 +408,25 @@ function escHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+function safeNum(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : Number(fallback || 0);
+}
+
+function formatTime(d) {
+  try {
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch (e) {
+    return String(d);
+  }
+}
+
 function appendHtml(el, html) {
   el.insertAdjacentHTML("beforeend", html);
+}
+
+function hasResolvedLocation() {
+  return typeof state.lat === "number" && typeof state.lon === "number";
 }
 
 function setResolvedLocation(lat, lon, label) {
@@ -433,22 +436,13 @@ function setResolvedLocation(lat, lon, label) {
   saveLastLocation(state.lat, state.lon, state.placeLabel);
 }
 
-function hasResolvedLocation() {
-  return typeof state.lat === "number" && Number.isFinite(state.lat) &&
-         typeof state.lon === "number" && Number.isFinite(state.lon);
-}
-
-function clearResolvedLocationInState() {
+function clearResolvedLocation() {
   state.lat = null;
   state.lon = null;
   state.placeLabel = "";
   state.matches = [];
   state.selectedIndex = 0;
-}
-
-function normalizePlaceQuery(s) {
-  const x = String(s || "").trim().split(/\s+/).join(" ");
-  return x;
+  clearLastLocation();
 }
 
 function isoTodayLocal() {
@@ -466,8 +460,10 @@ function isIsoDate(s) {
 function clampDateToDailyList(requestedIso, dailyIsoList) {
   if (!dailyIsoList || !dailyIsoList.length) return requestedIso || isoTodayLocal();
   if (!requestedIso || !isIsoDate(requestedIso)) return dailyIsoList[0];
+
   const min = dailyIsoList[0];
   const max = dailyIsoList[dailyIsoList.length - 1];
+
   if (requestedIso < min) return min;
   if (requestedIso > max) return max;
   return requestedIso;
@@ -485,21 +481,37 @@ function filterHourlyToDate(times, values, dateIso) {
   return out.filter(function (x) { return Number.isFinite(x.v); });
 }
 
-function formatTime(d) {
-  try {
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  } catch (e) {
-    return String(d);
+// Normalize query:
+// - collapses whitespace
+// - recognizes "City, st" and uppercases the state code (st, wa, id, etc.)
+// - casing does not matter
+function normalizePlaceQuery(s) {
+  const x0 = String(s || "").trim().replace(/\s+/g, " ");
+  if (!x0) return "";
+
+  // city, st
+  // Example: "spokane, wa" -> "Spokane, WA" (we do not title-case city, only state code)
+  const m = x0.match(/^(.+?),\s*([a-zA-Z]{2})$/);
+  if (m) {
+    const city = String(m[1] || "").trim();
+    const st = String(m[2] || "").trim().toUpperCase();
+    if (city && st) return city + ", " + st;
   }
+  return x0;
 }
 
-function fToC(f) {
-  return (Number(f) - 32) * (5 / 9);
-}
-
-function safeNum(n, fallback) {
-  const x = Number(n);
-  return Number.isFinite(x) ? x : (fallback === undefined ? 0 : fallback);
+// ----------------------------
+// Stop GPS speed watch if running
+// ----------------------------
+function stopSpeedWatchIfRunning() {
+  try {
+    if (state.speedWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(state.speedWatchId);
+    }
+  } catch (e) {
+    // ignore
+  }
+  state.speedWatchId = null;
 }
 
 // ----------------------------
@@ -511,8 +523,10 @@ async function geocodeSearch(query, count) {
 
   const url =
     "https://geocoding-api.open-meteo.com/v1/search" +
-    "?name=" + encodeURIComponent(q) +
-    "&count=" + encodeURIComponent(count || 10) +
+    "?name=" +
+    encodeURIComponent(q) +
+    "&count=" +
+    encodeURIComponent(count || 10) +
     "&language=en&format=json";
 
   try {
@@ -526,11 +540,7 @@ async function geocodeSearch(query, count) {
         const admin1 = x.admin1 || "";
         const country = x.country || "";
         const parts = [name, admin1, country].filter(Boolean);
-        return {
-          label: parts.join(", "),
-          lat: Number(x.latitude),
-          lon: Number(x.longitude)
-        };
+        return { label: parts.join(", "), lat: Number(x.latitude), lon: Number(x.longitude) };
       })
       .filter(function (x) {
         return Number.isFinite(x.lat) && Number.isFinite(x.lon);
@@ -543,8 +553,10 @@ async function geocodeSearch(query, count) {
 async function reverseGeocode(lat, lon) {
   const url =
     "https://geocoding-api.open-meteo.com/v1/reverse" +
-    "?latitude=" + encodeURIComponent(lat) +
-    "&longitude=" + encodeURIComponent(lon) +
+    "?latitude=" +
+    encodeURIComponent(lat) +
+    "&longitude=" +
+    encodeURIComponent(lon) +
     "&language=en&format=json";
 
   try {
@@ -567,13 +579,15 @@ async function reverseGeocode(lat, lon) {
 }
 
 // ----------------------------
-// API: Best times (sunrise/sunset) - multi-day
+// API: Sunrise/Sunset (7 days)
 // ----------------------------
 async function fetchSunTimesMulti(lat, lon) {
   const url =
     "https://api.open-meteo.com/v1/forecast" +
-    "?latitude=" + encodeURIComponent(lat) +
-    "&longitude=" + encodeURIComponent(lon) +
+    "?latitude=" +
+    encodeURIComponent(lat) +
+    "&longitude=" +
+    encodeURIComponent(lon) +
     "&daily=sunrise,sunset" +
     "&forecast_days=7" +
     "&timezone=auto";
@@ -602,15 +616,19 @@ function sunForDate(sunData, dateIso) {
 }
 
 // ----------------------------
-// API: Weather/Wind - daily overview + hourly chart (multi-day)
+// API: Weather/Wind multi (7 days)
+// - daily: temp min/max, precip probability max, max wind, max gust
+// - hourly: wind speed for chart
 // ----------------------------
 async function fetchWeatherWindMulti(lat, lon) {
   const url =
     "https://api.open-meteo.com/v1/forecast" +
-    "?latitude=" + encodeURIComponent(lat) +
-    "&longitude=" + encodeURIComponent(lon) +
-    "&hourly=wind_speed_10m,wind_gusts_10m,temperature_2m,precipitation_probability" +
+    "?latitude=" +
+    encodeURIComponent(lat) +
+    "&longitude=" +
+    encodeURIComponent(lon) +
     "&daily=temperature_2m_min,temperature_2m_max,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max" +
+    "&hourly=wind_speed_10m" +
     "&wind_speed_unit=mph" +
     "&temperature_unit=fahrenheit" +
     "&forecast_days=7" +
@@ -619,28 +637,23 @@ async function fetchWeatherWindMulti(lat, lon) {
   const r = await fetch(url);
   const data = await r.json();
 
-  const hourly = data && data.hourly ? data.hourly : null;
-  const daily = data && data.daily ? data.daily : null;
+  const daily = data && data.daily ? data.daily : {};
+  const hourly = data && data.hourly ? data.hourly : {};
 
-  const out = {
-    hourly: {
-      time: hourly && hourly.time ? hourly.time : [],
-      wind: hourly && hourly.wind_speed_10m ? hourly.wind_speed_10m : [],
-      gust: hourly && hourly.wind_gusts_10m ? hourly.wind_gusts_10m : [],
-      tempF: hourly && hourly.temperature_2m ? hourly.temperature_2m : [],
-      pop: hourly && hourly.precipitation_probability ? hourly.precipitation_probability : []
-    },
+  return {
     daily: {
-      time: daily && daily.time ? daily.time : [],
-      tmin: daily && daily.temperature_2m_min ? daily.temperature_2m_min : [],
-      tmax: daily && daily.temperature_2m_max ? daily.temperature_2m_max : [],
-      popMax: daily && daily.precipitation_probability_max ? daily.precipitation_probability_max : [],
-      windMax: daily && daily.wind_speed_10m_max ? daily.wind_speed_10m_max : [],
-      gustMax: daily && daily.wind_gusts_10m_max ? daily.wind_gusts_10m_max : []
+      time: daily.time || [],
+      tmin: daily.temperature_2m_min || [],
+      tmax: daily.temperature_2m_max || [],
+      popMax: daily.precipitation_probability_max || [],
+      windMax: daily.wind_speed_10m_max || [],
+      gustMax: daily.wind_gusts_10m_max || []
+    },
+    hourly: {
+      time: hourly.time || [],
+      wind: hourly.wind_speed_10m || []
     }
   };
-
-  return out;
 }
 
 // ----------------------------
@@ -699,7 +712,7 @@ function drawWindLineChart(canvas, points) {
     return padT + (1 - t) * h;
   }
 
-  // Grid lines
+  // Grid
   ctx.strokeStyle = "rgba(0,0,0,0.10)";
   ctx.lineWidth = 1;
   for (let g = 0; g <= 2; g++) {
@@ -724,7 +737,6 @@ function drawWindLineChart(canvas, points) {
   // Line
   ctx.strokeStyle = "rgba(7,27,31,0.75)";
   ctx.lineWidth = 2;
-
   ctx.beginPath();
   ctx.moveTo(xFor(0), yFor(points[0].mph));
   for (let i2 = 1; i2 < points.length; i2++) {
@@ -767,8 +779,13 @@ function drawWindLineChart(canvas, points) {
   ctx.textAlign = "left";
 }
 
+// ============================
+// app.js (PART 2 OF 3) BEGIN
+// ============================
+
 // ----------------------------
 // UI: Header + Nav
+// - Home button hidden while on Home (only shown elsewhere)
 // ----------------------------
 const PAGE_TITLES = {
   Home: "Weather/Wind + Best Times",
@@ -777,19 +794,8 @@ const PAGE_TITLES = {
   Speedometer: "Speedometer"
 };
 
-function stopSpeedWatchIfRunning() {
-  try {
-    if (state.speedWatchId !== null && navigator.geolocation) {
-      navigator.geolocation.clearWatch(state.speedWatchId);
-    }
-  } catch (e) {
-    // ignore
-  }
-  state.speedWatchId = null;
-}
-
 function renderHeaderAndNav() {
-  const title = PAGE_TITLES[state.tool] || "";
+  const title = PAGE_TITLES[state.tool] || "FishyNW Tools";
 
   app.innerHTML =
     '<div class="wrap">' +
@@ -799,7 +805,7 @@ function renderHeaderAndNav() {
     '" alt="FishyNW"></div>' +
     '    <div class="title">' +
     escHtml(title) +
-    '<div class="small">v ' +
+    '<div class="small muted">v ' +
     escHtml(APP_VERSION) +
     "</div></div>" +
     "  </div>" +
@@ -810,22 +816,17 @@ function renderHeaderAndNav() {
 
   const nav = document.getElementById("nav");
 
-  // Home hides Home button. Other pages show Home.
-  let items = [];
-  if (state.tool === "Home") {
-    items = [
-      ["Depth", "Trolling depth calculator"],
-      ["Tips", "Species tips"],
-      ["Speed", "Speedometer"]
-    ];
-  } else {
-    items = [
-      ["Home", "Home"],
-      ["Depth", "Trolling depth calculator"],
-      ["Tips", "Species tips"],
-      ["Speed", "Speedometer"]
-    ];
-  }
+  // If on Home, hide Home button.
+  // If not on Home, show Home button first.
+  const items = [];
+  if (state.tool !== "Home") items.push(["Home", "Home"]);
+
+  items.push(["Depth", "Trolling depth calculator"]);
+  items.push(["Tips", "Species tips"]);
+  items.push(["Speed", "Speedometer"]);
+
+  // If Home is hidden, grid becomes 3; keep it nice by still using 2 columns on mobile.
+  // On desktop it is 4 columns by CSS, but fewer items is fine.
 
   for (let i = 0; i < items.length; i++) {
     const label = items[i][0];
@@ -835,11 +836,9 @@ function renderHeaderAndNav() {
     btn.textContent = label;
     btn.className = "navBtn";
 
-    // Disable the button if it would go to the current tool
     if (toolName === state.tool) {
+      btn.classList.add("navBtnActive");
       btn.disabled = true;
-      btn.style.opacity = "0.7";
-      btn.style.cursor = "default";
     } else {
       btn.addEventListener("click", function () {
         stopSpeedWatchIfRunning();
@@ -858,8 +857,8 @@ function pageEl() {
 
 // ----------------------------
 // UI: Location Picker (reusable)
-// - Clear button only when a location is resolved
-// - AUTOCLEAR location when user types in the box
+// - NO clear saved location button
+// - auto-clears saved location if user edits the box
 // ----------------------------
 function renderLocationPicker(container, placeKey, onResolved) {
   appendHtml(
@@ -877,11 +876,7 @@ function renderLocationPicker(container, placeKey, onResolved) {
       </div>
 
       <div id="${placeKey}_matches" style="margin-top:10px;"></div>
-      <div id="${placeKey}_using" class="small" style="margin-top:10px;"></div>
-
-      <div id="${placeKey}_clear_wrap" style="margin-top:10px; display:none;">
-        <button id="${placeKey}_clear" type="button" class="consentDecline">Clear saved location</button>
-      </div>
+      <div id="${placeKey}_using" class="small muted" style="margin-top:10px;"></div>
     </div>
   `
   );
@@ -889,66 +884,52 @@ function renderLocationPicker(container, placeKey, onResolved) {
   const usingEl = document.getElementById(placeKey + "_using");
   const matchesEl = document.getElementById(placeKey + "_matches");
   const placeInput = document.getElementById(placeKey + "_place");
-  const clearWrap = document.getElementById(placeKey + "_clear_wrap");
-  const clearBtn = document.getElementById(placeKey + "_clear");
 
-  function setClearVisible(isVisible) {
-    clearWrap.style.display = isVisible ? "block" : "none";
-  }
-
-  function hardClearLocationUi(keepText) {
-    // Clear persisted + active location and any match UI.
-    clearLastLocation();
-    clearResolvedLocationInState();
-
-    matchesEl.innerHTML = "";
-    usingEl.textContent = "";
-    setClearVisible(false);
-
-    if (!keepText) placeInput.value = "";
-
-    if (typeof onResolved === "function") onResolved("cleared");
-  }
-
-  // --- NEW: autoclear location when typing begins ---
-  placeInput.addEventListener("input", function () {
-    const t = normalizePlaceQuery(placeInput.value);
-
-    // If the user is typing anything, kill the currently resolved location and match UI.
-    if (t.length > 0) {
-      // Only do it once per "typing session" if a location exists or matches are shown.
-      if (hasResolvedLocation() || matchesEl.innerHTML) {
-        hardClearLocationUi(true);
-        usingEl.textContent = "Type a place, then tap Search place.";
-      }
+  function renderUsing() {
+    if (hasResolvedLocation()) {
+      const lbl = state.placeLabel
+        ? state.placeLabel
+        : "Lat " + state.lat.toFixed(4) + ", Lon " + state.lon.toFixed(4);
+      usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(lbl);
     } else {
-      // If they cleared the box, keep the UI clean.
-      if (!hasResolvedLocation()) {
+      usingEl.textContent = "";
+    }
+  }
+
+  // Restore existing
+  if (hasResolvedLocation()) {
+    placeInput.value = state.placeLabel ? state.placeLabel : "";
+    renderUsing();
+  }
+
+  // Auto-clear saved location as soon as user edits the input away from the saved label.
+  // This prevents stale "Using" values while typing a new place.
+  placeInput.addEventListener("input", function () {
+    const raw = String(placeInput.value || "");
+    const val = raw.trim();
+
+    // If we have a resolved location and the user begins typing a different value,
+    // clear saved location immediately (as requested).
+    if (hasResolvedLocation()) {
+      const currentLabel = String(state.placeLabel || "").trim();
+      if (val && val !== currentLabel) {
+        clearResolvedLocation();
         matchesEl.innerHTML = "";
         usingEl.textContent = "";
-        setClearVisible(false);
+        // Also clear any saved placeholder label
+        // (we do not clear the box because the user is typing).
+        if (typeof onResolved === "function") onResolved("auto_cleared_by_typing");
+      }
+
+      // If user deletes everything, also clear.
+      if (!val) {
+        clearResolvedLocation();
+        matchesEl.innerHTML = "";
+        usingEl.textContent = "";
+        if (typeof onResolved === "function") onResolved("auto_cleared_empty");
       }
     }
   });
-
-  clearBtn.addEventListener("click", function () {
-    hardClearLocationUi(false);
-    usingEl.textContent = "Saved location cleared. Search a place or use your location.";
-  });
-
-  if (hasResolvedLocation()) {
-    const lbl = state.placeLabel
-      ? state.placeLabel
-      : "Lat " + state.lat.toFixed(4) + ", Lon " + state.lon.toFixed(4);
-
-    placeInput.value = state.placeLabel ? state.placeLabel : "Current location";
-    usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(lbl);
-    setClearVisible(true);
-    if (typeof onResolved === "function") onResolved("restored_or_existing");
-  } else {
-    setClearVisible(false);
-    usingEl.textContent = "";
-  }
 
   document.getElementById(placeKey + "_gps").addEventListener("click", function () {
     if (!navigator.geolocation) {
@@ -966,7 +947,6 @@ function renderLocationPicker(container, placeKey, onResolved) {
         state.matches = [];
         state.selectedIndex = 0;
         matchesEl.innerHTML = "";
-        setClearVisible(true);
 
         placeInput.value = "Locating nearest city...";
         usingEl.innerHTML =
@@ -982,18 +962,10 @@ function renderLocationPicker(container, placeKey, onResolved) {
           if (label) {
             setResolvedLocation(lat, lon, label);
             placeInput.value = label;
-            usingEl.innerHTML =
-              "<strong>Using:</strong> " +
-              escHtml(label) +
-              " (" +
-              lat.toFixed(4) +
-              ", " +
-              lon.toFixed(4) +
-              ")";
           } else {
             placeInput.value = "Current location";
           }
-
+          renderUsing();
           if (typeof onResolved === "function") onResolved("gps_reverse");
         });
       },
@@ -1029,13 +1001,14 @@ function renderLocationPicker(container, placeKey, onResolved) {
       .join("");
 
     matchesEl.innerHTML =
-      '<label class="small"><strong>Choose the correct match</strong></label>' +
-      '<select id="' + placeKey + '_select">' +
+      '<div class="small"><strong>Choose the correct match</strong></div>' +
+      '<select id="' + placeKey + '_select" style="margin-top:8px;">' +
       optionsHtml +
       "</select>" +
       '<div style="margin-top:10px;">' +
       '<button id="' + placeKey + '_use" style="width:100%;">Use this place</button>' +
-      "</div>";
+      "</div>" +
+      '<div class="small muted" style="margin-top:8px;">Pick the correct match, then tap Use this place.</div>';
 
     document.getElementById(placeKey + "_select").addEventListener("change", function (e) {
       state.selectedIndex = Number(e.target.value);
@@ -1046,33 +1019,25 @@ function renderLocationPicker(container, placeKey, onResolved) {
       if (!chosen) return;
 
       setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
-      setClearVisible(true);
-
       placeInput.value = chosen.label;
-      usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);
+      matchesEl.innerHTML = "";
+      renderUsing();
 
       if (typeof onResolved === "function") onResolved("search_pick");
     });
 
-    usingEl.textContent = "Pick the correct match, then tap Use this place.";
+    usingEl.textContent = "";
   });
 }
 
 // ============================
-// app.js (PART 2 OF 2) BEGIN
-// FishyNW.com - Fishing Tools (Web)
-// Version 1.0.8
-// ASCII ONLY. No Unicode. No smart quotes. No special dashes.
+// app.js (PART 3 OF 3) BEGIN
 // ============================
 
 // ----------------------------
-// Home: Weather/Wind + Best Times
+// Home logic helpers
 // ----------------------------
 function computeBestFishingWindows(sunrise, sunset) {
-  // Simple, practical windows:
-  // - Dawn: 90 min before sunrise to 60 min after
-  // - Dusk: 60 min before sunset to 90 min after
-  // - Midday minor: 12:00 to 13:00 local (optional)
   const out = [];
 
   const dawnStart = new Date(sunrise.getTime() - 90 * 60 * 1000);
@@ -1092,29 +1057,20 @@ function computeBestFishingWindows(sunrise, sunset) {
   return out;
 }
 
+// GO/CAUTION/NO-GO
+// - Wind and gust drive the base.
+// - Cold weather can force CAUTION or NO-GO even if wind is light.
+// - Big water and paddle craft are stricter.
 function computeGoStatus(inputs) {
-  // Inputs:
-  // - craft: kayak paddle vs motorized vs small boat
-  // - water: small/protected vs big/offshore
-  // - windMax, gustMax
-  // - tmin, tmax
-  //
-  // Return:
-  //  { label:"GO|CAUTION|NO-GO", score:0..100, needlePct:0..100, message:"..." }
-  //
-  // This is not a safety guarantee. It is a quick decision helper.
-
   const craft = inputs.craft || "Kayak (paddle)";
   const water = inputs.waterType || "Small / protected";
   const windMax = safeNum(inputs.windMax, 0);
   const gustMax = safeNum(inputs.gustMax, windMax);
   const tmin = safeNum(inputs.tmin, 40);
   const tmax = safeNum(inputs.tmax, 55);
-
   const avgF = (tmin + tmax) / 2;
 
-  // Baseline thresholds.
-  // Stricter for paddle kayak + big water.
+  // Baseline thresholds
   let goWind = 10;
   let cautionWind = 14;
   let nogoWind = 18;
@@ -1124,82 +1080,90 @@ function computeGoStatus(inputs) {
   let nogoGust = 28;
 
   if (craft === "Kayak (motorized)") {
-    goWind += 2;
-    cautionWind += 2;
-    nogoWind += 2;
-    goGust += 2;
-    cautionGust += 2;
-    nogoGust += 2;
+    goWind += 2; cautionWind += 2; nogoWind += 2;
+    goGust += 2; cautionGust += 2; nogoGust += 2;
   } else if (craft === "Boat (small)") {
-    goWind += 4;
-    cautionWind += 4;
-    nogoWind += 4;
-    goGust += 4;
-    cautionGust += 4;
-    nogoGust += 4;
+    goWind += 4; cautionWind += 4; nogoWind += 4;
+    goGust += 4; cautionGust += 4; nogoGust += 4;
   }
 
   if (water === "Big water / offshore") {
-    goWind -= 3;
-    cautionWind -= 3;
-    nogoWind -= 3;
-    goGust -= 3;
-    cautionGust -= 3;
-    nogoGust -= 3;
+    goWind -= 3; cautionWind -= 3; nogoWind -= 3;
+    goGust -= 3; cautionGust -= 3; nogoGust -= 3;
   }
 
-  // Cold penalty (air temp proxy). If air is cold, water is often cold too.
-  // We push toward caution with low temps.
-  let coldPenalty = 0;
-  if (avgF <= 38) coldPenalty = 10;
-  else if (avgF <= 45) coldPenalty = 6;
-  else if (avgF <= 52) coldPenalty = 3;
-
-  // Compute risk score from wind and gust.
-  // 0 = best, 100 = worst.
   function scoreFromThresholds(value, g, c, n) {
     if (value <= g) return 0;
     if (value >= n) return 100;
-    // scale between g..n with a soft knee at c
-    if (value <= c) {
-      return ((value - g) / Math.max(1, c - g)) * 45;
-    }
+    if (value <= c) return ((value - g) / Math.max(1, c - g)) * 45;
     return 45 + ((value - c) / Math.max(1, n - c)) * 55;
   }
 
   const sWind = scoreFromThresholds(windMax, goWind, cautionWind, nogoWind);
   const sGust = scoreFromThresholds(gustMax, goGust, cautionGust, nogoGust);
 
-  let score = Math.max(sWind, sGust) + coldPenalty;
+  // Base score from wind/gust
+  let score = Math.max(sWind, sGust);
+
+  // Cold severity rules (your request):
+  // - If it is really cold outside (below ~30), never show GO.
+  // - If it is brutal cold (very low temps), force NO-GO.
+  //
+  // We use both daily high and daily low as signals.
+  const highF = tmax;
+  const lowF = tmin;
+
+  // Wind chill-ish bump (simple): cold + wind increases consequence
+  // Not a formal NWS calculation, just a practical penalty.
+  const chillPenalty = Math.max(0, (35 - avgF)) * 0.6 + Math.max(0, windMax - 5) * 0.4;
+  if (avgF < 45) score += Math.min(18, chillPenalty);
+
+  // Hard floors
+  let forceAtLeastCaution = false;
+  let forceNoGo = false;
+
+  // If daily high is <= 30, at minimum CAUTION.
+  if (highF <= 30) forceAtLeastCaution = true;
+
+  // If daily low is <= 20 OR average <= 22, force NO-GO.
+  if (lowF <= 20 || avgF <= 22) forceNoGo = true;
+
+  // Clamp score
   score = Math.max(0, Math.min(100, score));
 
+  // Label from score
   let label = "GO";
   if (score >= 70) label = "NO-GO";
   else if (score >= 35) label = "CAUTION";
 
-  // Needle percent left->right across GO/Y/R
+  // Apply cold overrides
+  if (forceNoGo) label = "NO-GO";
+  else if (forceAtLeastCaution && label === "GO") label = "CAUTION";
+
   const needlePct = Math.max(0, Math.min(100, score));
 
   let msg = "Generally favorable. Watch for local funnels, open water chop, and changing conditions.";
   if (label === "CAUTION") {
     msg =
-      "Use caution. Expect wind shifts and chop. Stay close to shore and have a clear plan to get off the water quickly.";
+      "Use caution. Expect changing wind and chop. Stay close to shore and keep an easy exit plan.";
   }
   if (label === "NO-GO") {
     msg =
-      "Not recommended. Winds and/or gusts are high for the selected craft and water type. Consider rescheduling or fishing sheltered water.";
+      "Not recommended. Conditions are high risk for the selected craft/water type. Consider sheltered water or reschedule.";
   }
 
-  // Cold-specific add-on
-  if (avgF <= 45 && label !== "NO-GO") {
-    msg += " Cold conditions increase risk. Dress for immersion, not just air temp.";
+  // Cold add-on messaging
+  if (highF <= 30 && label !== "NO-GO") {
+    msg += " Very cold air increases consequence. Dress for immersion, not just air temp.";
+  }
+  if (forceNoGo) {
+    msg += " Extreme cold can turn a minor issue into an emergency quickly.";
   }
 
   return { label: label, score: score, needlePct: needlePct, message: msg };
 }
 
 function computeExposureTips(inputs) {
-  // Uses day temps + wind. If cold -> dry suit / insulation. If hot -> sun protection.
   const tmin = safeNum(inputs.tmin, 40);
   const tmax = safeNum(inputs.tmax, 55);
   const windMax = safeNum(inputs.windMax, 0);
@@ -1209,33 +1173,34 @@ function computeExposureTips(inputs) {
 
   const tips = [];
 
-  // Always
+  // Always relevant
   tips.push("Sunscreen matters even on cloudy days. Reapply and protect lips.");
-  tips.push("Bring a dry bag with a spare top and gloves, plus a warm hat in cooler months.");
+  tips.push("Bring a dry bag with a spare layer and gloves. Keep keys/phone in a waterproof pouch.");
 
-  // Cold leaning
+  // Cold
   if (avgF <= 50) {
-    tips.unshift("Cold air and likely cold water. Lean toward a dry suit or a proper wet suit setup.");
-    tips.unshift("Avoid cotton layers. Use synthetics or wool to retain insulation when wet.");
-    if (avgF <= 40) {
-      tips.unshift("Cold risk is high. Consider neoprene gloves/boots and limit exposure time.");
-    }
+    tips.unshift("Avoid cotton layers. Use synthetics or wool that insulate when wet.");
+    tips.unshift("Cold air and likely cold water: lean toward a dry suit or a proper wet suit setup.");
+    if (avgF <= 40) tips.unshift("Neoprene gloves/boots help. Limit exposure time and keep shore close.");
   }
 
-  // Hot leaning
+  // Hot
   if (tmax >= 78) {
-    tips.unshift("Hot day. Wear light, sun-repellent clothing and a wide-brim hat.");
+    tips.unshift("Hot day: wear sun shirts and light, sun-repellent clothing. Use a wide-brim hat.");
     tips.unshift("Hydrate early. Bring more water than you think you need.");
   }
 
-  // Wind leaning
+  // Wind
   if (windMax >= 12 || gustMax >= 20) {
-    tips.push("Wind can spike suddenly. Keep a leash on key gear and plan a protected return route.");
+    tips.push("Wind can spike fast. Leash key gear and plan a protected return route.");
   }
 
   return tips;
 }
 
+// ----------------------------
+// Pages
+// ----------------------------
 function renderHome() {
   const page = pageEl();
 
@@ -1244,7 +1209,7 @@ function renderHome() {
     `
     <div class="card">
       <h2>Weather/Wind + Best Times</h2>
-      <div class="muted">Pick a date once. Weather tiles + wind chart + best fishing windows auto-generate after location is set.</div>
+      <div class="small muted">Pick a date once. Weather tiles + wind chart + best fishing windows auto-generate after location is set.</div>
 
       <div class="grid2" style="margin-top:12px;">
         <div>
@@ -1252,28 +1217,29 @@ function renderHome() {
           <input id="home_date" type="date" />
           <div class="small muted" id="home_date_note" style="margin-top:6px;"></div>
         </div>
-        <div>
-          <div class="fieldLabel">Water type</div>
-          <select id="home_water">
-            <option>Small / protected</option>
-            <option>Big water / offshore</option>
-          </select>
+        <div style="display:grid; gap:12px;">
+          <div>
+            <div class="fieldLabel">Water type</div>
+            <select id="home_water">
+              <option>Small / protected</option>
+              <option>Big water / offshore</option>
+            </select>
+          </div>
+          <div>
+            <div class="fieldLabel">Craft</div>
+            <select id="home_craft">
+              <option>Kayak (paddle)</option>
+              <option>Kayak (motorized)</option>
+              <option>Boat (small)</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <div class="fieldLabel">Craft</div>
-          <select id="home_craft">
-            <option>Kayak (paddle)</option>
-            <option>Kayak (motorized)</option>
-            <option>Boat (small)</option>
-          </select>
-        </div>
-        <div style="display:none;"></div>
       </div>
     </div>
   `
   );
 
-  // Single date picker setup
+  // Controls
   const dateInput = document.getElementById("home_date");
   const noteEl = document.getElementById("home_date_note");
   const waterSel = document.getElementById("home_water");
@@ -1285,26 +1251,23 @@ function renderHome() {
   waterSel.value = state.waterType;
   craftSel.value = state.craft;
 
-  // Location picker card
-  renderLocationPicker(page, "home", function (why) {
-    // After location changes, rerender details below with fresh pulls.
-    // We only update the dynamic section.
+  // Location picker
+  renderLocationPicker(page, "home", function () {
     renderHomeDynamic();
   });
 
-  // Dynamic section placeholder
   appendHtml(page, `<div id="home_dynamic"></div>`);
 
-  function onAnyHomeControlChanged() {
-    state.dateIso = dateInput.value;
+  function onAnyChanged() {
+    state.dateIso = String(dateInput.value || "").slice(0, 10);
     state.waterType = waterSel.value;
     state.craft = craftSel.value;
     renderHomeDynamic();
   }
 
-  dateInput.addEventListener("change", onAnyHomeControlChanged);
-  waterSel.addEventListener("change", onAnyHomeControlChanged);
-  craftSel.addEventListener("change", onAnyHomeControlChanged);
+  dateInput.addEventListener("change", onAnyChanged);
+  waterSel.addEventListener("change", onAnyChanged);
+  craftSel.addEventListener("change", onAnyChanged);
 
   renderHomeDynamic();
 
@@ -1314,13 +1277,13 @@ function renderHome() {
 
     dyn.innerHTML = "";
 
-    // Hide ugly "pick a place first" message: show nothing until location is set.
+    // Hide the ugly "pick a place" boxes: show nothing until location is set.
     if (!hasResolvedLocation()) return;
 
     appendHtml(
       dyn,
       `
-      <div class="card compact" id="home_loading">
+      <div class="card compact">
         <div><strong>Loading forecast...</strong></div>
         <div class="small muted">Building tiles, wind chart, and best times for your date.</div>
       </div>
@@ -1339,26 +1302,17 @@ function renderHome() {
       return;
     }
 
-    const dailyDates = (wx && wx.daily && wx.daily.time) ? wx.daily.time : [];
+    const dailyDates = wx && wx.daily && wx.daily.time ? wx.daily.time : [];
     const clamped = clampDateToDailyList(state.dateIso, dailyDates);
     state.dateIso = clamped;
     dateInput.value = clamped;
 
-    if (clamped !== dateInput.value) dateInput.value = clamped;
-
-    // Date note
-    if (isIsoDate(state.dateIso) && dailyDates.length) {
-      if (state.dateIso !== dateInput.value) dateInput.value = state.dateIso;
-      if (state.dateIso !== clampDateToDailyList(state.dateIso, dailyDates)) {
-        noteEl.textContent = "If you choose a date outside the 7-day forecast window, it will clamp.";
-      } else {
-        noteEl.textContent = "Forecast range: " + dailyDates[0] + " to " + dailyDates[dailyDates.length - 1] + ".";
-      }
+    if (dailyDates.length) {
+      noteEl.textContent = "Forecast range: " + dailyDates[0] + " to " + dailyDates[dailyDates.length - 1] + ".";
     } else {
       noteEl.textContent = "If you choose a date outside the 7-day forecast window, it will clamp.";
     }
 
-    // Pull daily overview for date
     const idx = dailyDates.indexOf(state.dateIso);
     if (idx < 0) {
       dyn.innerHTML =
@@ -1372,7 +1326,7 @@ function renderHome() {
     const windMax = safeNum(wx.daily.windMax[idx], 0);
     const gustMax = safeNum(wx.daily.gustMax[idx], 0);
 
-    // Best times from sunrise/sunset for that date
+    // Sun windows
     const sunFor = sunForDate(sun, state.dateIso);
     const windows = sunFor ? computeBestFishingWindows(sunFor.sunrise, sunFor.sunset) : [];
 
@@ -1386,7 +1340,7 @@ function renderHome() {
       tmax: tmax
     });
 
-    // Exposure tips
+    // Exposure
     const tips = computeExposureTips({
       tmin: tmin,
       tmax: tmax,
@@ -1394,28 +1348,20 @@ function renderHome() {
       gustMax: gustMax
     });
 
-    // Hourly wind for date (chart)
-    const hourlyTimes = wx.hourly.time || [];
-    const hourlyWind = wx.hourly.wind || [];
-    const pointsRaw = filterHourlyToDate(hourlyTimes, hourlyWind, state.dateIso);
-
-    // Reduce points to every 1-2 hours for readability (mobile)
+    // Hourly chart points
+    const pointsRaw = filterHourlyToDate(wx.hourly.time || [], wx.hourly.wind || [], state.dateIso);
     const points = [];
     for (let i = 0; i < pointsRaw.length; i++) {
-      if (i % 2 === 0) {
-        points.push({ dt: pointsRaw[i].dt, mph: safeNum(pointsRaw[i].v, 0) });
-      }
+      // every 2 hours for readability
+      if (i % 2 === 0) points.push({ dt: pointsRaw[i].dt, mph: safeNum(pointsRaw[i].v, 0) });
     }
     if (points.length < 2) {
-      // fallback to every hour
-      for (let j = 0; j < pointsRaw.length; j++) {
-        points.push({ dt: pointsRaw[j].dt, mph: safeNum(pointsRaw[j].v, 0) });
-      }
+      for (let j = 0; j < pointsRaw.length; j++) points.push({ dt: pointsRaw[j].dt, mph: safeNum(pointsRaw[j].v, 0) });
     }
 
-    // Build UI
     dyn.innerHTML = "";
 
+    // Overview tiles
     appendHtml(
       dyn,
       `
@@ -1428,16 +1374,19 @@ function renderHome() {
             <div class="tileVal">${escHtml(Math.round(tmin))} to ${escHtml(Math.round(tmax))} F</div>
             <div class="tileSub">Daily min / max</div>
           </div>
+
           <div class="tile">
             <div class="tileTop">Rain chance (max)</div>
             <div class="tileVal">${escHtml(Math.round(popMax))} %</div>
             <div class="tileSub">Peak probability</div>
           </div>
+
           <div class="tile">
             <div class="tileTop">Max sustained wind</div>
             <div class="tileVal">${escHtml(Math.round(windMax))} mph</div>
             <div class="tileSub">Day max</div>
           </div>
+
           <div class="tile">
             <div class="tileTop">Max gust</div>
             <div class="tileVal">${escHtml(Math.round(gustMax))} mph</div>
@@ -1459,7 +1408,7 @@ function renderHome() {
           <div class="meterNeedle" id="meter_needle" style="left:${escHtml(String(status.needlePct))}%;"></div>
         </div>
 
-        <div class="small" style="margin-top:8px;">${escHtml(status.message)}</div>
+        <div class="small muted" style="margin-top:8px;">${escHtml(status.message)}</div>
       </div>
     `
     );
@@ -1478,18 +1427,17 @@ function renderHome() {
       `
       <div class="card">
         <h3>Hourly wind (line chart)</h3>
-        <div class="small muted">Selected date only. Values are wind speed at 10m in mph.</div>
+        <div class="small muted">Selected date only. Wind speed at 10m in mph.</div>
         <div class="chartWrap">
           <canvas id="wind_canvas" class="windChart"></canvas>
         </div>
       </div>
     `
     );
-
     const canvas = document.getElementById("wind_canvas");
     drawWindLineChart(canvas, points);
 
-    // Best Times
+    // Best times
     const bestHtml = windows.length
       ? windows
           .map(function (w) {
@@ -1516,13 +1464,8 @@ function renderHome() {
     `
     );
 
-    // Exposure tips (dynamic)
-    const tipsHtml = tips
-      .map(function (t) {
-        return "<li>" + escHtml(t) + "</li>";
-      })
-      .join("");
-
+    // Exposure tips
+    const tipsHtml = tips.map(function (t) { return "<li>" + escHtml(t) + "</li>"; }).join("");
     appendHtml(
       dyn,
       `
@@ -1533,7 +1476,7 @@ function renderHome() {
     `
     );
 
-    // Redraw chart on resize (mobile rotate)
+    // Redraw on resize
     let resizeTimer = null;
     window.addEventListener("resize", function () {
       if (!document.getElementById("wind_canvas")) return;
@@ -1547,7 +1490,7 @@ function renderHome() {
 }
 
 // ----------------------------
-// Depth Calculator (simple)
+// Depth Calculator
 // ----------------------------
 function renderDepthCalculator() {
   const page = pageEl();
@@ -1557,7 +1500,7 @@ function renderDepthCalculator() {
     `
     <div class="card">
       <h2>Trolling Depth Calculator</h2>
-      <div class="muted">Simple estimate using weight and line out. This is not a sonar replacement.</div>
+      <div class="small muted">Simple estimate. Use as a starting point.</div>
 
       <div class="grid2" style="margin-top:12px;">
         <div>
@@ -1600,15 +1543,10 @@ function renderDepthCalculator() {
     const line = safeNum(document.getElementById("dc_line").value, 100);
     const test = safeNum(document.getElementById("dc_test").value, 12);
 
-    // Very rough model:
-    // depth ~= line * (0.18 + 0.02*weight) * (1.5/speed) * dragFactor
-    // dragFactor increases with thicker line
     const dragFactor = test <= 10 ? 1.0 : test <= 12 ? 0.95 : test <= 20 ? 0.85 : 0.78;
-
     const base = 0.18 + 0.02 * Math.max(0, weight);
     const speedFactor = 1.5 / Math.max(0.4, speed);
     let depth = line * base * speedFactor * dragFactor;
-
     depth = Math.max(0, Math.min(depth, line * 0.95));
 
     out.style.display = "block";
@@ -1616,12 +1554,12 @@ function renderDepthCalculator() {
       "<strong>Estimated depth:</strong> " +
       escHtml(depth.toFixed(1)) +
       " ft<br>" +
-      '<div class="small muted" style="margin-top:6px;">Tip: Use this as a starting point. Sonar and lure action matter a lot.</div>';
+      '<div class="small muted" style="margin-top:6px;">Current and lure drag can change results a lot.</div>';
   });
 }
 
 // ----------------------------
-// Species Tips (placeholder simple set)
+// Species Tips (simple)
 // ----------------------------
 function renderSpeciesTips() {
   const page = pageEl();
@@ -1642,7 +1580,7 @@ function renderSpeciesTips() {
       bullets: [
         "Wind can improve the bite on rocky points and flats.",
         "Use jigs, tubes, jerkbaits, and small swimbaits.",
-        "In cold water, slow-roll and stay close to bottom structure."
+        "In cold water, slow down and stay close to bottom structure."
       ]
     },
     {
@@ -1661,7 +1599,7 @@ function renderSpeciesTips() {
     `
     <div class="card">
       <h2>Species Tips</h2>
-      <div class="muted">Quick, practical guidelines with temperature ranges.</div>
+      <div class="small muted">Quick, practical guidelines with temperature ranges.</div>
       <div style="margin-top:12px;">
         <select id="tips_sel"></select>
       </div>
@@ -1697,7 +1635,7 @@ function renderSpeciesTips() {
 }
 
 // ----------------------------
-// Speedometer (GPS speed)
+// Speedometer
 // ----------------------------
 function renderSpeedometer() {
   const page = pageEl();
@@ -1707,7 +1645,7 @@ function renderSpeedometer() {
     `
     <div class="card">
       <h2>Speedometer</h2>
-      <div class="muted">GPS-based speed. Requires location permission. Best used outside with clear sky view.</div>
+      <div class="small muted">GPS-based speed. Requires location permission. Best used outside.</div>
 
       <div class="btnRow" style="margin-top:12px;">
         <button id="spd_start">Start</button>
@@ -1745,13 +1683,12 @@ function renderSpeedometer() {
     try {
       state.speedWatchId = navigator.geolocation.watchPosition(
         function (pos) {
-          const ms = safeNum(pos.coords.speed, 0); // meters/sec (can be null)
-          let mph = ms * 2.236936;
+          const ms = pos.coords.speed;
+          let mph = Number.isFinite(ms) ? ms * 2.236936 : NaN;
           if (!Number.isFinite(mph)) mph = 0;
 
           valEl.textContent = mph.toFixed(1) + " mph";
-          noteEl.textContent =
-            "Accuracy: " + safeNum(pos.coords.accuracy, 0).toFixed(0) + " m";
+          noteEl.textContent = "Accuracy: " + safeNum(pos.coords.accuracy, 0).toFixed(0) + " m";
         },
         function (err) {
           noteEl.textContent = "Speed error: " + escHtml(err.message);
@@ -1779,15 +1716,12 @@ function render() {
   if (!app) app = document.getElementById("app");
   if (!app) return;
 
-  // Consent banner
   renderConsentBannerIfNeeded();
 
   // Restore last location once
   if (!hasResolvedLocation()) {
     const last = loadLastLocation();
-    if (last) {
-      setResolvedLocation(last.lat, last.lon, last.label || "");
-    }
+    if (last) setResolvedLocation(last.lat, last.lon, last.label || "");
   }
 
   renderHeaderAndNav();
@@ -1800,7 +1734,6 @@ function render() {
   else if (state.tool === "Species tips") renderSpeciesTips();
   else if (state.tool === "Speedometer") renderSpeedometer();
   else {
-    // fallback
     state.tool = "Home";
     renderHome();
   }
@@ -1812,13 +1745,9 @@ function render() {
 document.addEventListener("DOMContentLoaded", function () {
   app = document.getElementById("app");
 
-  // Default tool
   state.tool = "Home";
-
-  // Default shared date
   state.dateIso = isoTodayLocal();
 
-  // Make sure footer does not overlap content on very small screens
   try {
     window.scrollTo(0, 0);
   } catch (e) {
@@ -1828,6 +1757,4 @@ document.addEventListener("DOMContentLoaded", function () {
   render();
 });
 
-// ============================
-// app.js (PART 2 OF 2) END
 // ============================

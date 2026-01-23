@@ -1,6 +1,6 @@
 // app.js
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.1
+// Version 1.0.2
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 
 "use strict";
@@ -18,11 +18,11 @@
   - Uses browser geolocation for "Use my location".
   - Reverse geocodes GPS lat/lon to a nearest city label when possible.
   - On mobile: header stacks, nav is a clean 2-column grid.
-  - Best Times button is disabled + red until location is acquired, then enabled + green.
+  - Best Times auto-displays as soon as a location is acquired (GPS or place selection).
   - GA4 loads ONLY after user accepts the consent banner.
 */
 
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.0.2";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -611,121 +611,125 @@ function renderLocationPicker(container, placeKey, onResolved) {
     if (typeof onResolved === "function") onResolved();
   }
 
-  document.getElementById(placeKey + "_gps").addEventListener("click", function () {
-    if (!navigator.geolocation) {
-      usingEl.textContent = "Geolocation not supported on this device/browser.";
-      return;
-    }
+  document
+    .getElementById(placeKey + "_gps")
+    .addEventListener("click", function () {
+      if (!navigator.geolocation) {
+        usingEl.textContent = "Geolocation not supported on this device/browser.";
+        return;
+      }
 
-    usingEl.textContent = "Requesting location permission...";
-    navigator.geolocation.getCurrentPosition(
-      function (pos) {
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
+      usingEl.textContent = "Requesting location permission...";
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
 
-        setResolvedLocation(lat, lon, "Current location");
-        state.matches = [];
-        state.selectedIndex = 0;
-        matchesEl.innerHTML = "";
+          setResolvedLocation(lat, lon, "Current location");
+          state.matches = [];
+          state.selectedIndex = 0;
+          matchesEl.innerHTML = "";
 
-        // Immediate feedback + autofill input
-        placeInput.value = "Locating nearest city...";
-        usingEl.innerHTML =
-          "<strong>Using:</strong> Current location (" +
-          lat.toFixed(4) +
-          ", " +
-          lon.toFixed(4) +
-          ")";
-
-        if (typeof onResolved === "function") onResolved();
-
-        // Try to resolve nearest city/town name
-        reverseGeocode(lat, lon).then(function (label) {
-          if (label) {
-            setResolvedLocation(lat, lon, label);
-            placeInput.value = label;
-            usingEl.innerHTML =
-              "<strong>Using:</strong> " +
-              escHtml(label) +
-              " (" +
-              lat.toFixed(4) +
-              ", " +
-              lon.toFixed(4) +
-              ")";
-          } else {
-            placeInput.value = "Current location";
-          }
+          // Immediate feedback + autofill input
+          placeInput.value = "Locating nearest city...";
+          usingEl.innerHTML =
+            "<strong>Using:</strong> Current location (" +
+            lat.toFixed(4) +
+            ", " +
+            lon.toFixed(4) +
+            ")";
 
           if (typeof onResolved === "function") onResolved();
-        });
-      },
-      function (err) {
-        usingEl.innerHTML =
-          "<strong>Location error:</strong> " + escHtml(err.message);
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 500 }
-    );
-  });
 
-  document.getElementById(placeKey + "_search").addEventListener("click", async function () {
-    const q = normalizePlaceQuery(placeInput.value);
-    if (!q) {
-      usingEl.textContent = "Type a place name or ZIP, or use your location.";
-      return;
-    }
+          // Try to resolve nearest city/town name
+          reverseGeocode(lat, lon).then(function (label) {
+            if (label) {
+              setResolvedLocation(lat, lon, label);
+              placeInput.value = label;
+              usingEl.innerHTML =
+                "<strong>Using:</strong> " +
+                escHtml(label) +
+                " (" +
+                lat.toFixed(4) +
+                ", " +
+                lon.toFixed(4) +
+                ")";
+            } else {
+              placeInput.value = "Current location";
+            }
 
-    usingEl.textContent = "Searching...";
-    const matches = await geocodeSearch(q, 10);
-    state.matches = matches;
-    state.selectedIndex = 0;
-
-    if (!matches.length) {
-      matchesEl.innerHTML = "";
-      usingEl.textContent = "No matches. Try City, State or ZIP.";
-      return;
-    }
-
-    const optionsHtml = matches
-      .map(function (m, i) {
-        return '<option value="' + i + '">' + escHtml(m.label) + "</option>";
-      })
-      .join("");
-
-    matchesEl.innerHTML =
-      '<label class="small"><strong>Choose the correct match</strong></label>' +
-      '<select id="' +
-      placeKey +
-      '_select">' +
-      optionsHtml +
-      "</select>" +
-      '<div style="margin-top:10px;">' +
-      '<button id="' +
-      placeKey +
-      '_use" style="width:100%;">Use this place</button>' +
-      "</div>";
-
-    document
-      .getElementById(placeKey + "_select")
-      .addEventListener("change", function (e) {
-        state.selectedIndex = Number(e.target.value);
-      });
-
-    document.getElementById(placeKey + "_use").addEventListener("click", function () {
-      const chosen = state.matches[state.selectedIndex];
-      if (!chosen) return;
-
-      setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
-
-      // Autofill input with chosen place label
-      placeInput.value = chosen.label;
-
-      usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);
-
-      if (typeof onResolved === "function") onResolved();
+            if (typeof onResolved === "function") onResolved();
+          });
+        },
+        function (err) {
+          usingEl.innerHTML =
+            "<strong>Location error:</strong> " + escHtml(err.message);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 500 }
+      );
     });
 
-    usingEl.textContent = "Pick the correct match, then tap Use this place.";
-  });
+  document
+    .getElementById(placeKey + "_search")
+    .addEventListener("click", async function () {
+      const q = normalizePlaceQuery(placeInput.value);
+      if (!q) {
+        usingEl.textContent = "Type a place name or ZIP, or use your location.";
+        return;
+      }
+
+      usingEl.textContent = "Searching...";
+      const matches = await geocodeSearch(q, 10);
+      state.matches = matches;
+      state.selectedIndex = 0;
+
+      if (!matches.length) {
+        matchesEl.innerHTML = "";
+        usingEl.textContent = "No matches. Try City, State or ZIP.";
+        return;
+      }
+
+      const optionsHtml = matches
+        .map(function (m, i) {
+          return '<option value="' + i + '">' + escHtml(m.label) + "</option>";
+        })
+        .join("");
+
+      matchesEl.innerHTML =
+        '<label class="small"><strong>Choose the correct match</strong></label>' +
+        '<select id="' +
+        placeKey +
+        '_select">' +
+        optionsHtml +
+        "</select>" +
+        '<div style="margin-top:10px;">' +
+        '<button id="' +
+        placeKey +
+        '_use" style="width:100%;">Use this place</button>' +
+        "</div>";
+
+      document
+        .getElementById(placeKey + "_select")
+        .addEventListener("change", function (e) {
+          state.selectedIndex = Number(e.target.value);
+        });
+
+      document.getElementById(placeKey + "_use").addEventListener("click", function () {
+        const chosen = state.matches[state.selectedIndex];
+        if (!chosen) return;
+
+        setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
+
+        // Autofill input with chosen place label
+        placeInput.value = chosen.label;
+
+        usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);
+
+        if (typeof onResolved === "function") onResolved();
+      });
+
+      usingEl.textContent = "Pick the correct match, then tap Use this place.";
+    });
 }
 
 // ----------------------------
@@ -736,50 +740,47 @@ function renderBestTimesPage() {
   page.innerHTML =
     '<div class="card">' +
     "  <h2>Best Fishing Times</h2>" +
-    '  <div class="small">Search a place or use your location, then display times.</div>' +
+    '  <div class="small">Search a place or use your location. Times will display automatically.</div>' +
     "</div>";
 
-  function updateTimesButtonState() {
-    const btn = document.getElementById("times_go");
-    if (!btn) return;
-
-    if (hasResolvedLocation()) {
-      btn.disabled = false;
-      btn.classList.remove("dangerBtn"); // green
-    } else {
-      btn.disabled = true;
-      if (!btn.classList.contains("dangerBtn")) btn.classList.add("dangerBtn"); // red
-    }
-  }
-
-  renderLocationPicker(page, "times", updateTimesButtonState);
-
+  // Output area (no button)
   appendHtml(
     page,
     `
     <div class="card">
-      <button id="times_go" class="dangerBtn" disabled>Display Best Fishing Times</button>
-      <div id="times_out" style="margin-top:10px;"></div>
+      <div id="times_out"></div>
     </div>
   `
   );
 
-  updateTimesButtonState();
+  const out = document.getElementById("times_out");
 
-  document.getElementById("times_go").addEventListener("click", async function () {
-    const out = document.getElementById("times_out");
-    out.innerHTML = "";
+  // Guard against double-calls (GPS fires twice: raw coords, then reverse-geocode label)
+  let inflight = false;
+  let lastKey = "";
 
+  async function loadTimesIfReady() {
     if (!hasResolvedLocation()) {
-      out.textContent = "Pick a place or use your location first.";
+      out.innerHTML =
+        '<div class="small">Pick a place or use your location to see times.</div>';
       return;
     }
 
-    out.textContent = "Loading...";
+    const key = state.lat.toFixed(5) + "," + state.lon.toFixed(5);
+    if (inflight) return;
+    if (key === lastKey && out.innerHTML) return;
+
+    inflight = true;
+    lastKey = key;
+
+    out.innerHTML = '<div class="small">Loading...</div>';
+
     try {
       const sun = await fetchSunTimes(state.lat, state.lon);
       if (!sun) {
-        out.textContent = "Could not load sunrise/sunset. Try again.";
+        out.innerHTML =
+          '<div class="small">Could not load sunrise/sunset. Try again.</div>';
+        inflight = false;
         return;
       }
 
@@ -791,7 +792,14 @@ function renderBestTimesPage() {
       const eveningStart = new Date(sunset.getTime() - 60 * 60 * 1000);
       const eveningEnd = new Date(sunset.getTime() + 60 * 60 * 1000);
 
+      const label = state.placeLabel
+        ? state.placeLabel
+        : "Lat " + state.lat.toFixed(4) + ", Lon " + state.lon.toFixed(4);
+
       out.innerHTML =
+        '<div class="small" style="margin-bottom:10px;"><strong>Using:</strong> ' +
+        escHtml(label) +
+        "</div>" +
         '<div class="card compact">' +
         '  <div class="small"><strong>Morning Window</strong></div>' +
         '  <div style="font-size:20px;font-weight:900;">' +
@@ -808,10 +816,20 @@ function renderBestTimesPage() {
         escHtml(formatTime(eveningEnd)) +
         "</div>" +
         "</div>";
+
+      inflight = false;
     } catch (e) {
-      out.textContent = "Could not load sunrise/sunset. Try again.";
+      out.innerHTML =
+        '<div class="small">Could not load sunrise/sunset. Try again.</div>';
+      inflight = false;
     }
-  });
+  }
+
+  // Location picker will call this whenever location becomes available
+  renderLocationPicker(page, "times", loadTimesIfReady);
+
+  // If a location was already resolved earlier (from another page), show times immediately
+  loadTimesIfReady();
 }
 
 function renderWindPage() {

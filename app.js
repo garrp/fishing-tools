@@ -15,6 +15,7 @@
   - Uses Open-Meteo for sunrise/sunset and wind.
   - Uses Open-Meteo Geocoding for place search.
   - Uses browser geolocation for "Use my location".
+  - Reverse geocodes GPS lat/lon to a nearest city label when possible.
 */
 
 // ----------------------------
@@ -157,6 +158,33 @@ async function geocodeSearch(query, count) {
   }
 }
 
+// Reverse geocode (GPS -> nearest place label)
+async function reverseGeocode(lat, lon) {
+  const url =
+    "https://geocoding-api.open-meteo.com/v1/reverse" +
+    "?latitude=" + encodeURIComponent(lat) +
+    "&longitude=" + encodeURIComponent(lon) +
+    "&language=en&format=json";
+
+  try {
+    const r = await fetch(url);
+    const data = await r.json();
+    const results = data && data.results ? data.results : [];
+    if (!results.length) return null;
+
+    const x = results[0];
+    const name = x.name || "";
+    const admin1 = x.admin1 || "";
+    const country = x.country || "";
+
+    const parts = [name, admin1, country].filter(Boolean);
+    const label = parts.join(", ");
+    return label || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 // ----------------------------
 // API: Best times
 // ----------------------------
@@ -231,7 +259,7 @@ const PAGE_TITLES = {
   "Wind forecast": "Wind Forecast",
   "Trolling depth calculator": "Trolling Depth Calculator",
   "Species tips": "Species Tips",
-  "Speedometer": "Speedometer"
+  Speedometer: "Speedometer"
 };
 
 function stopSpeedWatchIfRunning() {
@@ -323,7 +351,7 @@ function renderLocationPicker(container, placeKey) {
   const matchesEl = document.getElementById(placeKey + "_matches");
   const placeInput = document.getElementById(placeKey + "_place");
 
-  // Autofill input if we already have location
+  // Autofill input if we already have a location
   if (hasResolvedLocation()) {
     const lbl = state.placeLabel
       ? state.placeLabel
@@ -350,15 +378,32 @@ function renderLocationPicker(container, placeKey) {
         state.selectedIndex = 0;
         matchesEl.innerHTML = "";
 
-        // Autofill the input
-        placeInput.value = "Current location";
-
+        // Immediate feedback
+        placeInput.value = "Locating nearest city...";
         usingEl.innerHTML =
           "<strong>Using:</strong> Current location (" +
           lat.toFixed(4) +
           ", " +
           lon.toFixed(4) +
           ")";
+
+        // Try to resolve nearest city/town name
+        reverseGeocode(lat, lon).then((label) => {
+          if (label) {
+            setResolvedLocation(lat, lon, label);
+            placeInput.value = label;
+            usingEl.innerHTML =
+              "<strong>Using:</strong> " +
+              escHtml(label) +
+              " (" +
+              lat.toFixed(4) +
+              ", " +
+              lon.toFixed(4) +
+              ")";
+          } else {
+            placeInput.value = "Current location";
+          }
+        });
       },
       (err) => {
         usingEl.innerHTML = "<strong>Location error:</strong> " + escHtml(err.message);
@@ -406,7 +451,7 @@ function renderLocationPicker(container, placeKey) {
       if (!chosen) return;
       setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
 
-      // Autofill input with chosen place
+      // Autofill input with chosen place label
       placeInput.value = chosen.label;
 
       usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);

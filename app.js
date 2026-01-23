@@ -1137,8 +1137,14 @@ function computeGoStatus(inputs) {
   else if (score >= 35) label = "CAUTION";
 
   // Apply cold overrides
+  // Apply cold overrides
   if (forceNoGo) label = "NO-GO";
   else if (forceAtLeastCaution && label === "GO") label = "CAUTION";
+
+  // Make meter match final label (avoid NO-GO label + GO needle)
+  if (label === "NO-GO") score = Math.max(score, 75);
+  else if (label === "CAUTION") score = Math.max(score, 45);
+  else score = Math.min(score, 34);
 
   const needlePct = Math.max(0, Math.min(100, score));
 

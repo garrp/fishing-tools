@@ -1,6 +1,6 @@
 // app.js
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.2
+// Version 1.0.4
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 
 "use strict";
@@ -10,7 +10,7 @@
 
   Expects an index.html with ONE root:
     <main id="app"></main>
-    <script src="app.js"></script>
+    <script src="app.js" defer></script>
 
   Notes:
   - Uses Open-Meteo for sunrise/sunset and wind.
@@ -18,11 +18,13 @@
   - Uses browser geolocation for "Use my location".
   - Reverse geocodes GPS lat/lon to a nearest city label when possible.
   - On mobile: header stacks, nav is a clean 2-column grid.
-  - Best Times auto-displays as soon as a location is acquired (GPS or place selection).
+  - Location is saved to localStorage and restored on next visit.
+  - Best Times auto-displays after location is acquired and no button is shown (v1.0.4).
+  - Wind auto-displays after location is acquired and no button is shown.
   - GA4 loads ONLY after user accepts the consent banner.
 */
 
-const APP_VERSION = "1.0.2";
+const APP_VERSION = "1.0.4";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -90,7 +92,6 @@ function renderConsentBannerIfNeeded() {
 
   if (document.getElementById("consent_bar")) return;
 
-  // Add bottom padding so the banner does not cover content
   try {
     document.body.style.paddingBottom = "120px";
   } catch (e) {
@@ -131,6 +132,41 @@ function renderConsentBannerIfNeeded() {
 }
 
 // ----------------------------
+// Persisted last location
+// ----------------------------
+const LAST_LOC_KEY = "fishynw_last_location_v1"; // {lat:number, lon:number, label:string}
+
+function saveLastLocation(lat, lon, label) {
+  try {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    const payload = {
+      lat: Number(lat),
+      lon: Number(lon),
+      label: String(label || "")
+    };
+    localStorage.setItem(LAST_LOC_KEY, JSON.stringify(payload));
+  } catch (e) {
+    // ignore
+  }
+}
+
+function loadLastLocation() {
+  try {
+    const raw = localStorage.getItem(LAST_LOC_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj) return null;
+    const lat = Number(obj.lat);
+    const lon = Number(obj.lon);
+    const label = String(obj.label || "");
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { lat: lat, lon: lon, label: label };
+  } catch (e) {
+    return null;
+  }
+}
+
+// ----------------------------
 // Shared state
 // ----------------------------
 const state = {
@@ -146,7 +182,7 @@ const state = {
 // ----------------------------
 // DOM
 // ----------------------------
-const app = document.getElementById("app");
+let app = null;
 
 // ----------------------------
 // Styles (mobile-first cleanup)
@@ -237,9 +273,6 @@ const app = document.getElementById("app");
   .sectionTitle { margin-top: 12px; font-weight: 900; }
   .list { margin: 8px 0 0 18px; }
   .list li { margin-bottom: 6px; }
-
-  .dangerBtn { background:#f4a3a3 !important; border-color:#e48f8f !important; color:#3b0a0a !important; }
-  .dangerBtn:hover { background:#ee8f8f !important; }
 
   /* Consent banner */
   .consentBar {
@@ -339,6 +372,7 @@ function setResolvedLocation(lat, lon, label) {
   state.lat = lat;
   state.lon = lon;
   state.placeLabel = label || "";
+  saveLastLocation(state.lat, state.lon, state.placeLabel);
 }
 
 function hasResolvedLocation() {
@@ -573,7 +607,7 @@ function pageEl() {
 
 // ----------------------------
 // UI: Location Picker (reusable)
-// onResolved is optional callback fired when we have lat/lon
+// onResolved fires when we have lat/lon
 // ----------------------------
 function renderLocationPicker(container, placeKey, onResolved) {
   appendHtml(
@@ -600,7 +634,6 @@ function renderLocationPicker(container, placeKey, onResolved) {
   const matchesEl = document.getElementById(placeKey + "_matches");
   const placeInput = document.getElementById(placeKey + "_place");
 
-  // Autofill input if we already have a location
   if (hasResolvedLocation()) {
     const lbl = state.placeLabel
       ? state.placeLabel
@@ -608,128 +641,120 @@ function renderLocationPicker(container, placeKey, onResolved) {
 
     placeInput.value = state.placeLabel ? state.placeLabel : "Current location";
     usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(lbl);
-    if (typeof onResolved === "function") onResolved();
+    if (typeof onResolved === "function") onResolved("restored_or_existing");
   }
 
-  document
-    .getElementById(placeKey + "_gps")
-    .addEventListener("click", function () {
-      if (!navigator.geolocation) {
-        usingEl.textContent = "Geolocation not supported on this device/browser.";
-        return;
-      }
+  document.getElementById(placeKey + "_gps").addEventListener("click", function () {
+    if (!navigator.geolocation) {
+      usingEl.textContent = "Geolocation not supported on this device/browser.";
+      return;
+    }
 
-      usingEl.textContent = "Requesting location permission...";
-      navigator.geolocation.getCurrentPosition(
-        function (pos) {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
+    usingEl.textContent = "Requesting location permission...";
+    navigator.geolocation.getCurrentPosition(
+      function (pos) {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
 
-          setResolvedLocation(lat, lon, "Current location");
-          state.matches = [];
-          state.selectedIndex = 0;
-          matchesEl.innerHTML = "";
-
-          // Immediate feedback + autofill input
-          placeInput.value = "Locating nearest city...";
-          usingEl.innerHTML =
-            "<strong>Using:</strong> Current location (" +
-            lat.toFixed(4) +
-            ", " +
-            lon.toFixed(4) +
-            ")";
-
-          if (typeof onResolved === "function") onResolved();
-
-          // Try to resolve nearest city/town name
-          reverseGeocode(lat, lon).then(function (label) {
-            if (label) {
-              setResolvedLocation(lat, lon, label);
-              placeInput.value = label;
-              usingEl.innerHTML =
-                "<strong>Using:</strong> " +
-                escHtml(label) +
-                " (" +
-                lat.toFixed(4) +
-                ", " +
-                lon.toFixed(4) +
-                ")";
-            } else {
-              placeInput.value = "Current location";
-            }
-
-            if (typeof onResolved === "function") onResolved();
-          });
-        },
-        function (err) {
-          usingEl.innerHTML =
-            "<strong>Location error:</strong> " + escHtml(err.message);
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 500 }
-      );
-    });
-
-  document
-    .getElementById(placeKey + "_search")
-    .addEventListener("click", async function () {
-      const q = normalizePlaceQuery(placeInput.value);
-      if (!q) {
-        usingEl.textContent = "Type a place name or ZIP, or use your location.";
-        return;
-      }
-
-      usingEl.textContent = "Searching...";
-      const matches = await geocodeSearch(q, 10);
-      state.matches = matches;
-      state.selectedIndex = 0;
-
-      if (!matches.length) {
+        setResolvedLocation(lat, lon, "Current location");
+        state.matches = [];
+        state.selectedIndex = 0;
         matchesEl.innerHTML = "";
-        usingEl.textContent = "No matches. Try City, State or ZIP.";
-        return;
-      }
 
-      const optionsHtml = matches
-        .map(function (m, i) {
-          return '<option value="' + i + '">' + escHtml(m.label) + "</option>";
-        })
-        .join("");
+        placeInput.value = "Locating nearest city...";
+        usingEl.innerHTML =
+          "<strong>Using:</strong> Current location (" +
+          lat.toFixed(4) +
+          ", " +
+          lon.toFixed(4) +
+          ")";
 
-      matchesEl.innerHTML =
-        '<label class="small"><strong>Choose the correct match</strong></label>' +
-        '<select id="' +
-        placeKey +
-        '_select">' +
-        optionsHtml +
-        "</select>" +
-        '<div style="margin-top:10px;">' +
-        '<button id="' +
-        placeKey +
-        '_use" style="width:100%;">Use this place</button>' +
-        "</div>";
+        if (typeof onResolved === "function") onResolved("gps");
 
-      document
-        .getElementById(placeKey + "_select")
-        .addEventListener("change", function (e) {
-          state.selectedIndex = Number(e.target.value);
+        reverseGeocode(lat, lon).then(function (label) {
+          if (label) {
+            setResolvedLocation(lat, lon, label);
+            placeInput.value = label;
+            usingEl.innerHTML =
+              "<strong>Using:</strong> " +
+              escHtml(label) +
+              " (" +
+              lat.toFixed(4) +
+              ", " +
+              lon.toFixed(4) +
+              ")";
+          } else {
+            placeInput.value = "Current location";
+          }
+
+          if (typeof onResolved === "function") onResolved("gps_reverse");
         });
+      },
+      function (err) {
+        usingEl.innerHTML =
+          "<strong>Location error:</strong> " + escHtml(err.message);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 500 }
+    );
+  });
 
-      document.getElementById(placeKey + "_use").addEventListener("click", function () {
-        const chosen = state.matches[state.selectedIndex];
-        if (!chosen) return;
+  document.getElementById(placeKey + "_search").addEventListener("click", async function () {
+    const q = normalizePlaceQuery(placeInput.value);
+    if (!q) {
+      usingEl.textContent = "Type a place name or ZIP, or use your location.";
+      return;
+    }
 
-        setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
+    usingEl.textContent = "Searching...";
+    const matches = await geocodeSearch(q, 10);
+    state.matches = matches;
+    state.selectedIndex = 0;
 
-        // Autofill input with chosen place label
-        placeInput.value = chosen.label;
+    if (!matches.length) {
+      matchesEl.innerHTML = "";
+      usingEl.textContent = "No matches. Try City, State or ZIP.";
+      return;
+    }
 
-        usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);
+    const optionsHtml = matches
+      .map(function (m, i) {
+        return '<option value="' + i + '">' + escHtml(m.label) + "</option>";
+      })
+      .join("");
 
-        if (typeof onResolved === "function") onResolved();
+    matchesEl.innerHTML =
+      '<label class="small"><strong>Choose the correct match</strong></label>' +
+      '<select id="' +
+      placeKey +
+      '_select">' +
+      optionsHtml +
+      "</select>" +
+      '<div style="margin-top:10px;">' +
+      '<button id="' +
+      placeKey +
+      '_use" style="width:100%;">Use this place</button>' +
+      "</div>";
+
+    document
+      .getElementById(placeKey + "_select")
+      .addEventListener("change", function (e) {
+        state.selectedIndex = Number(e.target.value);
       });
 
-      usingEl.textContent = "Pick the correct match, then tap Use this place.";
+    document.getElementById(placeKey + "_use").addEventListener("click", function () {
+      const chosen = state.matches[state.selectedIndex];
+      if (!chosen) return;
+
+      setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
+
+      placeInput.value = chosen.label;
+      usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);
+
+      if (typeof onResolved === "function") onResolved("search_pick");
     });
+
+    usingEl.textContent = "Pick the correct match, then tap Use this place.";
+  });
 }
 
 // ----------------------------
@@ -740,47 +765,42 @@ function renderBestTimesPage() {
   page.innerHTML =
     '<div class="card">' +
     "  <h2>Best Fishing Times</h2>" +
-    '  <div class="small">Search a place or use your location. Times will display automatically.</div>' +
+    '  <div class="small">Auto-displays times after location is acquired.</div>' +
     "</div>";
 
-  // Output area (no button)
   appendHtml(
     page,
     `
-    <div class="card">
-      <div id="times_out"></div>
+    <div class="card" id="times_controls"></div>
+
+    <div class="card" id="times_results">
+      <div id="times_out" style="margin-top:0;"></div>
     </div>
   `
   );
 
+  const controls = document.getElementById("times_controls");
   const out = document.getElementById("times_out");
 
-  // Guard against double-calls (GPS fires twice: raw coords, then reverse-geocode label)
-  let inflight = false;
-  let lastKey = "";
+  function onResolved() {
+    autoDisplayTimes();
+  }
 
-  async function loadTimesIfReady() {
+  renderLocationPicker(controls, "times", onResolved);
+
+  async function autoDisplayTimes() {
+    out.innerHTML = "";
+
     if (!hasResolvedLocation()) {
-      out.innerHTML =
-        '<div class="small">Pick a place or use your location to see times.</div>';
+      out.textContent = "Pick a place or use your location first.";
       return;
     }
 
-    const key = state.lat.toFixed(5) + "," + state.lon.toFixed(5);
-    if (inflight) return;
-    if (key === lastKey && out.innerHTML) return;
-
-    inflight = true;
-    lastKey = key;
-
-    out.innerHTML = '<div class="small">Loading...</div>';
-
+    out.textContent = "Loading...";
     try {
       const sun = await fetchSunTimes(state.lat, state.lon);
       if (!sun) {
-        out.innerHTML =
-          '<div class="small">Could not load sunrise/sunset. Try again.</div>';
-        inflight = false;
+        out.textContent = "Could not load sunrise/sunset. Try again.";
         return;
       }
 
@@ -792,14 +812,7 @@ function renderBestTimesPage() {
       const eveningStart = new Date(sunset.getTime() - 60 * 60 * 1000);
       const eveningEnd = new Date(sunset.getTime() + 60 * 60 * 1000);
 
-      const label = state.placeLabel
-        ? state.placeLabel
-        : "Lat " + state.lat.toFixed(4) + ", Lon " + state.lon.toFixed(4);
-
       out.innerHTML =
-        '<div class="small" style="margin-bottom:10px;"><strong>Using:</strong> ' +
-        escHtml(label) +
-        "</div>" +
         '<div class="card compact">' +
         '  <div class="small"><strong>Morning Window</strong></div>' +
         '  <div style="font-size:20px;font-weight:900;">' +
@@ -816,20 +829,10 @@ function renderBestTimesPage() {
         escHtml(formatTime(eveningEnd)) +
         "</div>" +
         "</div>";
-
-      inflight = false;
     } catch (e) {
-      out.innerHTML =
-        '<div class="small">Could not load sunrise/sunset. Try again.</div>';
-      inflight = false;
+      out.textContent = "Could not load sunrise/sunset. Try again.";
     }
   }
-
-  // Location picker will call this whenever location becomes available
-  renderLocationPicker(page, "times", loadTimesIfReady);
-
-  // If a location was already resolved earlier (from another page), show times immediately
-  loadTimesIfReady();
 }
 
 function renderWindPage() {
@@ -837,23 +840,30 @@ function renderWindPage() {
   page.innerHTML =
     '<div class="card">' +
     "  <h2>Wind Forecast</h2>" +
-    '  <div class="small">Current and future hourly wind speeds from your location or a place name.</div>' +
+    '  <div class="small">Auto-displays winds after location is acquired.</div>' +
     "</div>";
-
-  renderLocationPicker(page, "wind");
 
   appendHtml(
     page,
     `
-    <div class="card">
-      <button id="wind_go" class="dangerBtn">Display Winds</button>
-      <div id="wind_out" style="margin-top:10px;"></div>
+    <div class="card" id="wind_controls"></div>
+
+    <div class="card" id="wind_results">
+      <div id="wind_out" style="margin-top:0;"></div>
     </div>
   `
   );
 
-  document.getElementById("wind_go").addEventListener("click", async function () {
-    const out = document.getElementById("wind_out");
+  const controls = document.getElementById("wind_controls");
+  const out = document.getElementById("wind_out");
+
+  function onResolved() {
+    autoDisplayWinds();
+  }
+
+  renderLocationPicker(controls, "wind", onResolved);
+
+  async function autoDisplayWinds() {
     out.innerHTML = "";
 
     if (!hasResolvedLocation()) {
@@ -897,7 +907,7 @@ function renderWindPage() {
     } catch (e) {
       out.textContent = "Could not load wind. Try again.";
     }
-  });
+  }
 }
 
 function renderTrollingDepthPage() {
@@ -1004,26 +1014,13 @@ function speciesDb() {
   return {
     Kokanee: {
       temp: "42 to 55 F",
-      baits: [
-        "Small hoochies",
-        "Small spinners (wedding ring)",
-        "Corn with scent (where used)"
-      ],
+      baits: ["Small hoochies", "Small spinners (wedding ring)", "Corn with scent (where used)"],
       rigs: ["Dodger + leader + hoochie/spinner", "Weights or downrigger to match marks"],
-      Mid: [
-        "Troll dodger plus small hoochie or spinner behind it.",
-        "Run scent and tune speed until you get a steady rod thump."
-      ]
+      Mid: ["Troll dodger plus small hoochie or spinner behind it.", "Run scent and tune speed until you get a steady rod thump."]
     },
     "Rainbow trout": {
       temp: "45 to 65 F",
-      baits: [
-        "Small spoons",
-        "Inline spinners",
-        "Floating minnows",
-        "Worms (where legal)",
-        "PowerBait (where legal)"
-      ],
+      baits: ["Small spoons", "Inline spinners", "Floating minnows", "Worms (where legal)", "PowerBait (where legal)"],
       rigs: ["Cast and retrieve", "Trolling with long leads", "Slip sinker bait rig (near bottom)"],
       Top: ["When they are up, cast small spinners, spoons, or floating minnows."],
       Mid: ["Troll small spoons or spinners at 1.2 to 1.8 mph."],
@@ -1045,15 +1042,7 @@ function speciesDb() {
     },
     "Smallmouth bass": {
       temp: "60 to 75 F",
-      baits: [
-        "Walking baits",
-        "Poppers",
-        "Jerkbaits",
-        "Swimbaits",
-        "Ned rigs",
-        "Tubes",
-        "Drop shot plastics"
-      ],
+      baits: ["Walking baits", "Poppers", "Jerkbaits", "Swimbaits", "Ned rigs", "Tubes", "Drop shot plastics"],
       rigs: ["Ned rig", "Drop shot", "Tube jig"],
       Top: ["Walking baits and poppers early and late."],
       Mid: ["Jerkbaits and swimbaits around rocks and shade."],
@@ -1069,17 +1058,8 @@ function speciesDb() {
     },
     Walleye: {
       temp: "55 to 70 F",
-      baits: [
-        "Crankbaits (trolling)",
-        "Jigs with soft plastics",
-        "Jigs with crawler (where used)",
-        "Blade baits"
-      ],
-      rigs: [
-        "Jig and soft plastic",
-        "Bottom bouncer + harness (where used)",
-        "Trolling crankbaits on breaks"
-      ],
+      baits: ["Crankbaits (trolling)", "Jigs with soft plastics", "Jigs with crawler (where used)", "Blade baits"],
+      rigs: ["Jig and soft plastic", "Bottom bouncer + harness (where used)", "Trolling crankbaits on breaks"],
       Mid: ["Troll crankbaits along breaks at dusk and dawn."],
       Bottom: ["Jig near bottom on transitions and edges."]
     },
@@ -1101,9 +1081,7 @@ function speciesDb() {
       temp: "65 to 85 F",
       baits: ["Cut bait", "Worms", "Stink bait", "Chicken liver (where used)"],
       rigs: ["Slip sinker / Carolina rig", "Santee Cooper style (float bait slightly)"],
-      Bottom: [
-        "Soak bait on scent trails. Target holes, outside bends, slow water near current."
-      ]
+      Bottom: ["Soak bait on scent trails. Target holes, outside bends, slow water near current."]
     }
   };
 }
@@ -1281,6 +1259,27 @@ function render() {
   else renderSpeedometerPage();
 }
 
-// Boot
-renderConsentBannerIfNeeded();
-render();
+// ----------------------------
+// Boot (safe if script is not deferred)
+// ----------------------------
+function boot() {
+  app = document.getElementById("app");
+  if (!app) return;
+
+  // Restore last location BEFORE first render so pages auto-run immediately
+  const last = loadLastLocation();
+  if (last) {
+    state.lat = last.lat;
+    state.lon = last.lon;
+    state.placeLabel = last.label || "";
+  }
+
+  renderConsentBannerIfNeeded();
+  render();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot);
+} else {
+  boot();
+}

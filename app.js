@@ -16,6 +16,7 @@
   - Uses Open-Meteo Geocoding for place search.
   - Uses browser geolocation for "Use my location".
   - Reverse geocodes GPS lat/lon to a nearest city label when possible.
+  - Best Times button turns green when location is acquired.
 */
 
 // ----------------------------
@@ -325,8 +326,9 @@ function pageEl() {
 
 // ----------------------------
 // UI: Location Picker (reusable)
+// onResolved is optional callback fired when we have lat/lon
 // ----------------------------
-function renderLocationPicker(container, placeKey) {
+function renderLocationPicker(container, placeKey, onResolved) {
   appendHtml(
     container,
     `
@@ -359,6 +361,7 @@ function renderLocationPicker(container, placeKey) {
 
     placeInput.value = state.placeLabel ? state.placeLabel : "Current location";
     usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(lbl);
+    if (typeof onResolved === "function") onResolved();
   }
 
   document.getElementById(placeKey + "_gps").addEventListener("click", () => {
@@ -387,6 +390,8 @@ function renderLocationPicker(container, placeKey) {
           lon.toFixed(4) +
           ")";
 
+        if (typeof onResolved === "function") onResolved();
+
         // Try to resolve nearest city/town name
         reverseGeocode(lat, lon).then((label) => {
           if (label) {
@@ -403,6 +408,8 @@ function renderLocationPicker(container, placeKey) {
           } else {
             placeInput.value = "Current location";
           }
+
+          if (typeof onResolved === "function") onResolved();
         });
       },
       (err) => {
@@ -449,12 +456,15 @@ function renderLocationPicker(container, placeKey) {
     document.getElementById(placeKey + "_use").addEventListener("click", () => {
       const chosen = state.matches[state.selectedIndex];
       if (!chosen) return;
+
       setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
 
       // Autofill input with chosen place label
       placeInput.value = chosen.label;
 
       usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);
+
+      if (typeof onResolved === "function") onResolved();
     });
 
     usingEl.textContent = "Pick the correct match, then tap Use this place.";
@@ -473,17 +483,34 @@ function renderBestTimesPage() {
     </div>
   `;
 
-  renderLocationPicker(page, "times");
+  function updateTimesButtonState() {
+    const btn = document.getElementById("times_go");
+    if (!btn) return;
+
+    if (hasResolvedLocation()) {
+      btn.disabled = false;
+      btn.classList.remove("dangerBtn"); // turn green (default button style)
+    } else {
+      btn.disabled = true;
+      if (!btn.classList.contains("dangerBtn")) btn.classList.add("dangerBtn"); // red
+    }
+  }
+
+  // Location picker can now notify us when lat/lon is set
+  renderLocationPicker(page, "times", updateTimesButtonState);
 
   appendHtml(
     page,
     `
     <div class="card">
-      <button id="times_go" class="dangerBtn">Display Best Fishing Times</button>
+      <button id="times_go" class="dangerBtn" disabled>Display Best Fishing Times</button>
       <div id="times_out" style="margin-top:10px;"></div>
     </div>
   `
   );
+
+  // Set initial button state (in case location already exists)
+  updateTimesButtonState();
 
   document.getElementById("times_go").addEventListener("click", async () => {
     const out = document.getElementById("times_out");

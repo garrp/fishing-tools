@@ -1,212 +1,31 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>FishyNW Tools</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<style>
-/* -----------------------------
-   FishyNW Mobile-First Styles
-   Paste into index.html <head>
-------------------------------*/
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#8fd19e">
+  <title>FishyNW.com | Fishing Tools</title>
+  <meta name="description" content="FishyNW fishing tools: best fishing times, weather and wind, trolling depth, species tips, and GPS speedometer.">
 
-:root{
-  --bg: #ffffff;
-  --card: #f6f7f8;
-  --card2:#eef1f3;
-  --text:#0b0f12;
-  --muted:#5b6770;
+  <!-- Optional: basic social preview (safe defaults) -->
+  <meta property="og:title" content="FishyNW.com | Fishing Tools">
+  <meta property="og:description" content="Best fishing times, weather and wind, trolling depth, species tips, and GPS speedometer.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png">
 
-  --green:#9ad7a6;
-  --green2:#7ccf8d;
-  --red:#f3a3a3;
-
-  --border: rgba(0,0,0,.10);
-  --shadow: 0 8px 24px rgba(0,0,0,.08);
-
-  --radius: 14px;
-  --pad: 14px;
-  --gap: 10px;
-}
-
-*{ box-sizing:border-box; }
-html,body{ height:100%; }
-body{
-  margin:0;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  -webkit-text-size-adjust:100%;
-}
-
-/* App wrapper (make content fill phone width nicely) */
-#app, main#app{
-  width:100%;
-  max-width: 760px;
-  margin: 0 auto;
-  padding: calc(env(safe-area-inset-top) + 10px) 12px calc(env(safe-area-inset-bottom) + 18px);
-}
-
-/* Header/logo row */
-.fishynw-header{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-.fishynw-brand{
-  display:flex;
-  align-items:center;
-  gap: 10px;
-  min-width: 0;
-}
-.fishynw-logo{
-  width: 64px;
-  height: auto;
-  display:block;
-}
-.fishynw-title{
-  font-weight: 800;
-  font-size: clamp(18px, 4.6vw, 22px);
-  line-height: 1.15;
-  margin:0;
-}
-.fishynw-version{
-  font-size: 12px;
-  color: var(--muted);
-  white-space:nowrap;
-}
-
-/* Nav tabs */
-.fishynw-nav{
-  display:flex;
-  flex-wrap:wrap;
-  gap: 8px;
-  margin: 10px 0 12px;
-}
-.fishynw-tab{
-  flex: 1 1 calc(33.333% - 8px);
-  min-width: 108px;
-  border: 1px solid var(--border);
-  background: var(--green);
-  color: #0b0f12;
-  padding: 10px 10px;
-  border-radius: 10px;
-  font-weight: 700;
-  font-size: 14px;
-  cursor:pointer;
-}
-.fishynw-tab.is-active{
-  background: var(--green2);
-}
-
-/* Cards/sections */
-.card{
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: var(--pad);
-  margin: 10px 0;
-}
-.card h2{
-  margin: 0 0 6px;
-  font-size: 16px;
-}
-.card .sub{
-  margin: 0 0 10px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-/* Inputs */
-.field{
-  display:flex;
-  flex-direction:column;
-  gap: 8px;
-}
-label{
-  font-weight: 700;
-  font-size: 13px;
-}
-input[type="text"], input[type="number"], select{
-  width:100%;
-  padding: 12px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: #fff;
-  font-size: 16px; /* important: avoids iOS zoom */
-}
-
-/* Button rows */
-.btn-row{
-  display:flex;
-  gap: 10px;
-  margin-top: 10px;
-  flex-wrap:wrap;
-}
-.btn{
-  flex: 1 1 160px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px 12px;
-  font-weight: 800;
-  cursor:pointer;
-  font-size: 14px;
-  background: var(--green);
-}
-.btn.btn-danger{ background: var(--red); }
-.btn:active{ transform: translateY(1px); }
-
-/* Tables/rows in results */
-.kv{
-  display:grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px 10px;
-  padding: 10px;
-  border-radius: 12px;
-  background: #fff;
-  border: 1px solid var(--border);
-}
-.kv div:nth-child(odd){ color: var(--muted); font-weight: 700; }
-.kv div:nth-child(even){ font-weight: 800; text-align:right; }
-
-/* Charts container (keeps chart from overflowing) */
-.chart-wrap{
-  background:#fff;
-  border:1px solid var(--border);
-  border-radius: 12px;
-  padding: 10px;
-  overflow:hidden;
-}
-canvas{ max-width:100%; height:auto; display:block; }
-
-/* Footer */
-.fishynw-footer{
-  text-align:center;
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 16px;
-  padding: 10px 0 0;
-}
-
-/* Tighter layout for small phones */
-@media (max-width: 380px){
-  #app, main#app{ padding-left: 10px; padding-right: 10px; }
-  .fishynw-tab{ min-width: 96px; font-size: 13px; padding: 9px 9px; }
-  .btn{ flex-basis: 100%; } /* stack buttons on tiny screens */
-}
-
-/* Make nav 2-column on most phones for cleaner look */
-@media (max-width: 560px){
-  .fishynw-tab{ flex: 1 1 calc(50% - 8px); }
-}
-</style>
-
+  <!-- No external CSS required (app.js injects styles) -->
 </head>
+
 <body>
+  <!-- App root (REQUIRED to match app.js) -->
   <main id="app"></main>
-  <script src="app.js"></script>
+
+  <!-- App script (REQUIRED to match app.js boot logic) -->
+  <script src="app.js" defer></script>
+
+  <!-- Note:
+       - GA4 loads only after consent inside app.js
+       - All styling is injected by app.js
+  -->
 </body>
 </html>

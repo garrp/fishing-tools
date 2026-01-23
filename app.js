@@ -5,6 +5,18 @@
 
 "use strict";
 
+/*
+  Single-file vanilla JS app.
+  Expects an index.html with:
+    <main id="app"></main>
+    <script src="app.js"></script>
+
+  Notes:
+  - Uses Open-Meteo for sunrise/sunset and wind.
+  - Uses Open-Meteo Geocoding for place search.
+  - Uses browser geolocation for "Use my location".
+*/
+
 // ----------------------------
 // Config
 // ----------------------------
@@ -31,56 +43,10 @@ const state = {
 const app = document.getElementById("app");
 
 // ----------------------------
-// Helpers
-// ----------------------------
-function appendHtml(el, html) {
-  el.insertAdjacentHTML("beforeend", html);
-}
-
-function escHtml(s) {
-  return String(s || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function formatTime(d) {
-  try {
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  } catch (e) {
-    return String(d);
-  }
-}
-
-function setResolvedLocation(lat, lon, label) {
-  state.lat = lat;
-  state.lon = lon;
-  state.placeLabel = label || "";
-}
-
-function hasResolvedLocation() {
-  return typeof state.lat === "number" && typeof state.lon === "number";
-}
-
-function normalizePlaceQuery(s) {
-  return String(s || "").trim().split(/\s+/).join(" ");
-}
-
-function clearSpeedWatch() {
-  if (state.speedWatchId !== null && navigator.geolocation) {
-    navigator.geolocation.clearWatch(state.speedWatchId);
-    state.speedWatchId = null;
-  }
-}
-
-// ----------------------------
 // Styles (neutral + light green buttons)
 // ----------------------------
 (function injectStyles() {
   const css = `
-  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
   .wrap { max-width: 720px; margin: 0 auto; padding: 16px 14px 44px 14px; }
   .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; }
   .logo { max-width: 70%; }
@@ -115,6 +81,45 @@ function clearSpeedWatch() {
   style.textContent = css;
   document.head.appendChild(style);
 })();
+
+// ----------------------------
+// Utilities
+// ----------------------------
+function escHtml(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatTime(d) {
+  try {
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch (e) {
+    return String(d);
+  }
+}
+
+function appendHtml(el, html) {
+  el.insertAdjacentHTML("beforeend", html);
+}
+
+function setResolvedLocation(lat, lon, label) {
+  state.lat = lat;
+  state.lon = lon;
+  state.placeLabel = label || "";
+}
+
+function hasResolvedLocation() {
+  return typeof state.lat === "number" && typeof state.lon === "number";
+}
+
+function normalizePlaceQuery(s) {
+  const x = String(s || "").trim().split(/\s+/).join(" ");
+  return x;
+}
 
 // ----------------------------
 // API: Geocoding
@@ -229,6 +234,17 @@ const PAGE_TITLES = {
   "Speedometer": "Speedometer"
 };
 
+function stopSpeedWatchIfRunning() {
+  try {
+    if (state.speedWatchId !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(state.speedWatchId);
+    }
+  } catch (e) {
+    // ignore
+  }
+  state.speedWatchId = null;
+}
+
 function renderHeaderAndNav() {
   const title = PAGE_TITLES[state.tool] || "";
 
@@ -266,7 +282,7 @@ function renderHeaderAndNav() {
       const btn = document.createElement("button");
       btn.textContent = label;
       btn.addEventListener("click", () => {
-        clearSpeedWatch();
+        stopSpeedWatchIfRunning();
         state.tool = toolName;
         render();
       });
@@ -283,7 +299,9 @@ function pageEl() {
 // UI: Location Picker (reusable)
 // ----------------------------
 function renderLocationPicker(container, placeKey) {
-  appendHtml(container, `
+  appendHtml(
+    container,
+    `
     <div class="card">
       <h3>Location</h3>
       <input id="${placeKey}_place" type="text"
@@ -298,16 +316,20 @@ function renderLocationPicker(container, placeKey) {
       <div id="${placeKey}_matches" style="margin-top:10px;"></div>
       <div id="${placeKey}_using" class="small" style="margin-top:10px;"></div>
     </div>
-  `);
+  `
+  );
 
   const usingEl = document.getElementById(placeKey + "_using");
   const matchesEl = document.getElementById(placeKey + "_matches");
   const placeInput = document.getElementById(placeKey + "_place");
 
+  // Autofill input if we already have location
   if (hasResolvedLocation()) {
     const lbl = state.placeLabel
       ? state.placeLabel
       : "Lat " + state.lat.toFixed(4) + ", Lon " + state.lon.toFixed(4);
+
+    placeInput.value = state.placeLabel ? state.placeLabel : "Current location";
     usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(lbl);
   }
 
@@ -320,11 +342,23 @@ function renderLocationPicker(container, placeKey) {
     usingEl.textContent = "Requesting location permission...";
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setResolvedLocation(pos.coords.latitude, pos.coords.longitude, "");
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+
+        setResolvedLocation(lat, lon, "Current location");
         state.matches = [];
         state.selectedIndex = 0;
         matchesEl.innerHTML = "";
-        usingEl.innerHTML = "<strong>Using:</strong> your current location";
+
+        // Autofill the input
+        placeInput.value = "Current location";
+
+        usingEl.innerHTML =
+          "<strong>Using:</strong> Current location (" +
+          lat.toFixed(4) +
+          ", " +
+          lon.toFixed(4) +
+          ")";
       },
       (err) => {
         usingEl.innerHTML = "<strong>Location error:</strong> " + escHtml(err.message);
@@ -371,6 +405,10 @@ function renderLocationPicker(container, placeKey) {
       const chosen = state.matches[state.selectedIndex];
       if (!chosen) return;
       setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
+
+      // Autofill input with chosen place
+      placeInput.value = chosen.label;
+
       usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);
     });
 
@@ -392,12 +430,15 @@ function renderBestTimesPage() {
 
   renderLocationPicker(page, "times");
 
-  appendHtml(page, `
+  appendHtml(
+    page,
+    `
     <div class="card">
       <button id="times_go" class="dangerBtn">Display Best Fishing Times</button>
       <div id="times_out" style="margin-top:10px;"></div>
     </div>
-  `);
+  `
+  );
 
   document.getElementById("times_go").addEventListener("click", async () => {
     const out = document.getElementById("times_out");
@@ -427,11 +468,15 @@ function renderBestTimesPage() {
       out.innerHTML = `
         <div class="card compact">
           <div class="small"><strong>Morning Window</strong></div>
-          <div style="font-size:20px;font-weight:900;">${escHtml(formatTime(morningStart))} - ${escHtml(formatTime(morningEnd))}</div>
+          <div style="font-size:20px;font-weight:900;">${escHtml(formatTime(morningStart))} - ${escHtml(
+        formatTime(morningEnd)
+      )}</div>
         </div>
         <div class="card compact">
           <div class="small"><strong>Evening Window</strong></div>
-          <div style="font-size:20px;font-weight:900;">${escHtml(formatTime(eveningStart))} - ${escHtml(formatTime(eveningEnd))}</div>
+          <div style="font-size:20px;font-weight:900;">${escHtml(formatTime(eveningStart))} - ${escHtml(
+        formatTime(eveningEnd)
+      )}</div>
         </div>
       `;
     } catch (e) {
@@ -451,12 +496,15 @@ function renderWindPage() {
 
   renderLocationPicker(page, "wind");
 
-  appendHtml(page, `
+  appendHtml(
+    page,
+    `
     <div class="card">
       <button id="wind_go" class="dangerBtn">Display Winds</button>
       <div id="wind_out" style="margin-top:10px;"></div>
     </div>
-  `);
+  `
+  );
 
   document.getElementById("wind_go").addEventListener("click", async () => {
     const out = document.getElementById("wind_out");
@@ -592,7 +640,7 @@ function renderTrollingDepthPage() {
 
 function speciesDb() {
   return {
-    "Kokanee": {
+    Kokanee: {
       temp: "42 to 55 F",
       baits: ["Small hoochies", "Small spinners (wedding ring)", "Corn with scent (where used)"],
       rigs: ["Dodger + leader + hoochie/spinner", "Weights or downrigger to match marks"],
@@ -625,7 +673,15 @@ function speciesDb() {
     },
     "Smallmouth bass": {
       temp: "60 to 75 F",
-      baits: ["Walking baits", "Poppers", "Jerkbaits", "Swimbaits", "Ned rigs", "Tubes", "Drop shot plastics"],
+      baits: [
+        "Walking baits",
+        "Poppers",
+        "Jerkbaits",
+        "Swimbaits",
+        "Ned rigs",
+        "Tubes",
+        "Drop shot plastics"
+      ],
       rigs: ["Ned rig", "Drop shot", "Tube jig"],
       Top: ["Walking baits and poppers early and late."],
       Mid: ["Jerkbaits and swimbaits around rocks and shade."],
@@ -639,21 +695,21 @@ function speciesDb() {
       Mid: ["Swim jig or paddletail along weed edges."],
       Bottom: ["Texas rig and jig in thick cover and along drop-offs."]
     },
-    "Walleye": {
+    Walleye: {
       temp: "55 to 70 F",
       baits: ["Crankbaits (trolling)", "Jigs with soft plastics", "Jigs with crawler (where used)", "Blade baits"],
       rigs: ["Jig and soft plastic", "Bottom bouncer + harness (where used)", "Trolling crankbaits on breaks"],
       Mid: ["Troll crankbaits along breaks at dusk and dawn."],
       Bottom: ["Jig near bottom on transitions and edges."]
     },
-    "Perch": {
+    Perch: {
       temp: "55 to 75 F",
       baits: ["Small jigs", "Worm pieces", "Minnow (where allowed)", "Tiny grubs"],
       rigs: ["Small jighead + bait", "Dropper loop with small hook (where used)"],
       Mid: ["Small jigs tipped with bait, slowly swum through schools."],
       Bottom: ["Vertical jig small baits on bottom."]
     },
-    "Bluegill": {
+    Bluegill: {
       temp: "65 to 80 F",
       baits: ["Tiny poppers", "Small jigs", "Worm pieces", "Micro plastics"],
       rigs: ["Float + small jig/hook", "Ultralight jighead"],
@@ -702,32 +758,39 @@ function renderSpeciesTipsPage() {
     const out = document.getElementById("sp_out");
 
     let html = "";
-    html += `<div class="card compact"><div class="small"><strong>Most active water temperature range</strong></div><div style="font-size:20px;font-weight:900;">${escHtml(info.temp)}</div></div>`;
+    html += `<div class="card compact"><div class="small"><strong>Most active water temperature range</strong></div><div style="font-size:20px;font-weight:900;">${escHtml(
+      info.temp
+    )}</div></div>`;
 
     if (info.baits && info.baits.length) {
-      html += `<div class="card compact"><div class="small"><strong>Popular baits</strong></div><ul class="list">` +
+      html +=
+        `<div class="card compact"><div class="small"><strong>Popular baits</strong></div><ul class="list">` +
         info.baits.map((x) => `<li>${escHtml(x)}</li>`).join("") +
         `</ul></div>`;
     }
 
     if (info.rigs && info.rigs.length) {
-      html += `<div class="card compact"><div class="small"><strong>Common rigs</strong></div><ul class="list">` +
+      html +=
+        `<div class="card compact"><div class="small"><strong>Common rigs</strong></div><ul class="list">` +
         info.rigs.map((x) => `<li>${escHtml(x)}</li>`).join("") +
         `</ul></div>`;
     }
 
     if (info.Top && info.Top.length) {
-      html += `<div class="card compact"><div class="small"><strong>Topwater</strong></div><ul class="list">` +
+      html +=
+        `<div class="card compact"><div class="small"><strong>Topwater</strong></div><ul class="list">` +
         info.Top.map((x) => `<li>${escHtml(x)}</li>`).join("") +
         `</ul></div>`;
     }
     if (info.Mid && info.Mid.length) {
-      html += `<div class="card compact"><div class="small"><strong>Mid water</strong></div><ul class="list">` +
+      html +=
+        `<div class="card compact"><div class="small"><strong>Mid water</strong></div><ul class="list">` +
         info.Mid.map((x) => `<li>${escHtml(x)}</li>`).join("") +
         `</ul></div>`;
     }
     if (info.Bottom && info.Bottom.length) {
-      html += `<div class="card compact"><div class="small"><strong>Bottom</strong></div><ul class="list">` +
+      html +=
+        `<div class="card compact"><div class="small"><strong>Bottom</strong></div><ul class="list">` +
         info.Bottom.map((x) => `<li>${escHtml(x)}</li>`).join("") +
         `</ul></div>`;
     }
@@ -778,8 +841,6 @@ function renderSpeedometerPage() {
     statusEl.textContent = "Geolocation not supported on this device/browser.";
     return;
   }
-
-  clearSpeedWatch();
 
   state.speedWatchId = navigator.geolocation.watchPosition(
     (pos) => {

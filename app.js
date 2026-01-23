@@ -1,6 +1,6 @@
 // app.js
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.4
+// Version 1.0.5
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 
 "use strict";
@@ -32,9 +32,16 @@
         10F to < 20F => CAUTION
         temp > 105F => NO GO
         90F to 105F => CAUTION
+
+  v1.0.5:
+  - Wind nav button renamed to Weather/Wind.
+  - Wind page title renamed to Weather / Wind.
+  - Removed Display Winds button.
+  - Weather/Wind auto-loads as soon as a location is resolved (search match or GPS).
+  - Re-loads automatically when Big water toggle changes (if location is already set).
 */
 
-const APP_VERSION = "1.0.4";
+const APP_VERSION = "1.0.5";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -188,6 +195,8 @@ function injectStyles() {
     color: var(--text);
     font-weight:900;
     cursor:pointer;
+    font-size: 13px;
+    line-height: 14px;
   }
   .navBtn:hover { background: var(--green2); }
   .navBtn:active { background: #6bbb83; }
@@ -653,7 +662,7 @@ function pickTodayDailySummary(daily) {
 // ----------------------------
 const PAGE_TITLES = {
   "Best fishing times": "Best Fishing Times",
-  "Wind forecast": "Wind Forecast",
+  "Wind forecast": "Weather / Wind",
   "Trolling depth calculator": "Trolling Depth Calculator",
   "Species tips": "Species Tips",
   Speedometer: "Speedometer"
@@ -687,7 +696,7 @@ function renderHeaderAndNav() {
   const nav = document.getElementById("nav");
   const items = [
     ["Times", "Best fishing times"],
-    ["Wind", "Wind forecast"],
+    ["Weather/Wind", "Wind forecast"],
     ["Depth", "Trolling depth calculator"],
     ["Tips", "Species tips"],
     ["Speed", "Speedometer"]
@@ -948,8 +957,8 @@ function renderWindPage() {
   const page = pageEl();
   page.innerHTML =
     '<div class="card">' +
-    "  <h2>Wind Forecast</h2>" +
-    '  <div class="small">Current and future wind speeds with gusts. Daily summary blocks and kayak safety rating.</div>' +
+    "  <h2>Weather / Wind</h2>" +
+    '  <div class="small">Wind-focused forecast with gusts plus today summary: temperature and rain chance.</div>' +
     "</div>";
 
   appendHtml(
@@ -965,14 +974,13 @@ function renderWindPage() {
   `
   );
 
-  renderLocationPicker(page, "wind");
+  renderLocationPicker(page, "wind", loadWinds);
 
   appendHtml(
     page,
     `
     <div class="card">
-      <button id="wind_go" class="dangerBtn" type="button">Display Winds</button>
-      <div id="wind_out" style="margin-top:10px;"></div>
+      <div id="wind_out" style="margin-top:0;"></div>
     </div>
   `
   );
@@ -981,14 +989,16 @@ function renderWindPage() {
   bigWaterEl.checked = !!state.bigWater;
   bigWaterEl.addEventListener("change", function () {
     state.bigWater = !!bigWaterEl.checked;
+    if (hasResolvedLocation()) loadWinds();
   });
 
-  document.getElementById("wind_go").addEventListener("click", async function () {
+  async function loadWinds() {
     const out = document.getElementById("wind_out");
-    out.innerHTML = "";
+    if (!out) return;
 
     if (!hasResolvedLocation()) {
-      out.textContent = "Pick a place or use your location first.";
+      out.innerHTML =
+        '<div class="small">Pick a place or use your location to see weather and wind.</div>';
       return;
     }
 
@@ -1057,7 +1067,6 @@ function renderWindPage() {
           "</div></div>";
       }
 
-      // Daily blocks (Max wind, Max gust, Temp hi/lo, Rain)
       if (daily) {
         const maxWind = Number.isFinite(daily.maxWind) ? Math.round(daily.maxWind) : null;
         const maxGust = Number.isFinite(daily.maxGust) ? Math.round(daily.maxGust) : null;
@@ -1087,7 +1096,6 @@ function renderWindPage() {
           "</div>";
       }
 
-      // Big rating button BELOW wind output
       html +=
         '<div class="card">' +
         '  <div class="small"><strong>Kayak rating</strong></div>' +
@@ -1119,11 +1127,13 @@ function renderWindPage() {
 
       html += "  </div></div>";
 
-      out.innerHTML = html || "No wind data returned.";
+      out.innerHTML = html || "No data returned.";
     } catch (e) {
-      out.textContent = "Could not load wind. Try again.";
+      out.textContent = "Could not load weather/wind. Try again.";
     }
-  });
+  }
+
+  loadWinds();
 }
 
 function renderTrollingDepthPage() {

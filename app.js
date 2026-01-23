@@ -1,25 +1,31 @@
 // ============================
-// PART 1 BEGIN
-// (Single date picker + tighter weather tiles grid)
-// Paste this over PART 1 of your current app.js
-// ============================
-
-// ============================
-// app.js
+// APP.JS - PART 1 BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.8
+// Version 1.0.7
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
 "use strict";
 
 /*
-  Updates in 1.0.8:
-  - ONE shared date picker on Home for both Best Times + Weather/Wind.
-  - Weather tiles forced into a 2x2 grid on mobile (tighter vertical space).
+  Single-file vanilla JS app.
+
+  Expects an index.html with ONE root:
+    <main id="app"></main>
+    <script src="app.js" defer></script>
+
+  Notes:
+  - Uses Open-Meteo for sunrise/sunset and weather/wind.
+  - Uses Open-Meteo Geocoding for place search + reverse geocode.
+  - Uses browser geolocation for "Use my location".
+  - Location is saved to localStorage and restored on next visit.
+  - ONE date picker on Home controls both Weather/Wind and Best Times.
+  - Home is the landing page (Weather/Wind + Best Times).
+  - Other tools are accessible via button nav; Home button only shows when not on Home.
+  - GA4 loads ONLY after user accepts the consent banner.
 */
 
-const APP_VERSION = "1.0.8";
+const APP_VERSION = "1.0.7";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -151,10 +157,12 @@ function loadLastLocation() {
     if (!raw) return null;
     const obj = JSON.parse(raw);
     if (!obj) return null;
+
     const lat = Number(obj.lat);
     const lon = Number(obj.lon);
     const label = String(obj.label || "");
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
     return { lat: lat, lon: lon, label: label };
   } catch (e) {
     return null;
@@ -174,14 +182,17 @@ function clearLastLocation() {
 // ----------------------------
 const state = {
   tool: "Home",
+
   lat: null,
   lon: null,
   placeLabel: "",
+
   matches: [],
   selectedIndex: 0,
+
   speedWatchId: null,
 
-  // ONE shared date for Home (Best Times + Weather/Wind)
+  // ONE date picker (YYYY-MM-DD) for Home (Weather/Wind + Best Times)
   homeDate: ""
 };
 
@@ -277,29 +288,56 @@ let app = null;
   }
 
   .sectionTitle { margin-top: 12px; font-weight: 900; }
+
   .list { margin: 8px 0 0 18px; }
   .list li { margin-bottom: 6px; }
 
-  /* Two-column rows (used for forms) */
-  .row2 { display:flex; gap:10px; margin-top:10px; }
-  .row2 > * { flex: 1; }
-  .statBox {
-    border: 1px solid rgba(0,0,0,0.12);
-    background: rgba(255,255,255,0.6);
-    border-radius: 12px;
-    padding: 10px;
-  }
-  .statLabel { font-size: 12px; opacity: 0.85; font-weight: 900; margin-bottom: 6px; }
-  .statValue { font-size: 18px; font-weight: 900; }
-
-  /* FORCE weather tiles into a grid (2 columns) to reduce vertical space */
+  /* Weather tiles in grid (2 columns on mobile too) */
   .tileGrid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
     margin-top: 10px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
   }
-  .tileGrid .statBox { margin-top: 0; }
+  .statBox {
+    border-radius: 14px;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: rgba(255,255,255,0.55);
+    padding: 12px;
+  }
+  .statLabel { font-size: 13px; opacity: 0.85; font-weight: 900; }
+  .statValue { margin-top: 6px; font-size: 22px; font-weight: 900; }
+
+  /* Go/Caution/No-Go meter */
+  .meterWrap {
+    margin-top: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: rgba(255,255,255,0.55);
+    padding: 12px;
+  }
+  .meterBar {
+    height: 18px;
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid rgba(0,0,0,0.10);
+    display: flex;
+  }
+  .meterSegGo { flex: 1; background: rgba(110, 200, 140, 0.65); }
+  .meterSegCaution { flex: 1; background: rgba(255, 210, 90, 0.75); }
+  .meterSegNoGo { flex: 1; background: rgba(255, 120, 120, 0.65); }
+
+  .meterBadge {
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-weight: 900;
+    border: 1px solid rgba(0,0,0,0.10);
+    min-width: 64px;
+    text-align: center;
+  }
+  .badgeGo { background: rgba(110, 200, 140, 0.35); }
+  .badgeCaution { background: rgba(255, 210, 90, 0.35); }
+  .badgeNoGo { background: rgba(255, 120, 120, 0.35); }
 
   /* Wind chart */
   .chartWrap { margin-top: 10px; }
@@ -311,33 +349,6 @@ let app = null;
     background: rgba(255,255,255,0.7);
     border: 1px solid rgba(0,0,0,0.12);
   }
-
-  /* Go/Caution/No-Go meter */
-  .meterWrap { margin-top: 12px; }
-  .meterBadge {
-    padding: 6px 10px;
-    border-radius: 999px;
-    font-weight: 900;
-    border: 1px solid rgba(0,0,0,0.14);
-    background: rgba(255,255,255,0.65);
-    font-size: 12px;
-    letter-spacing: 0.3px;
-  }
-  .badgeGo { background: rgba(143,209,158,0.45); }
-  .badgeCaution { background: rgba(255,214,102,0.45); }
-  .badgeNoGo { background: rgba(244,163,163,0.55); }
-
-  .meterBar {
-    display:flex;
-    height: 14px;
-    border-radius: 999px;
-    overflow: hidden;
-    border: 1px solid rgba(0,0,0,0.12);
-    background: rgba(255,255,255,0.7);
-  }
-  .meterSegGo { flex: 1; background: rgba(143,209,158,0.9); }
-  .meterSegCaution { flex: 1; background: rgba(255,214,102,0.9); }
-  .meterSegNoGo { flex: 1; background: rgba(244,163,163,0.95); }
 
   /* Consent banner */
   .consentBar {
@@ -356,11 +367,7 @@ let app = null;
     align-items: center;
     justify-content: space-between;
   }
-  .consentText {
-    font-size: 13px;
-    line-height: 16px;
-    opacity: 0.92;
-  }
+  .consentText { font-size: 13px; line-height: 16px; opacity: 0.92; }
   .consentBtns {
     display: flex;
     gap: 10px;
@@ -389,23 +396,22 @@ let app = null;
 
   @media (max-width: 520px) {
     .wrap { padding: 10px 10px 30px 10px; }
-
     .header { flex-direction: column; align-items:center; justify-content:center; gap:8px; }
     .logo { max-width: 85%; }
     .logo img { max-width: 240px; margin: 0 auto; }
     .title { text-align:center; font-size: 18px; }
 
     .nav { grid-template-columns: repeat(2, 1fr); gap:10px; }
-
     .card { padding: 12px; border-radius: 14px; }
     canvas.windChart { height: 160px; }
-
-    /* Keep weather tiles as grid even on mobile (2 cols) */
-    .row2 { flex-direction: column; }
 
     .consentInner { flex-direction: column; align-items: stretch; }
     .consentBtns { justify-content: stretch; min-width: 0; }
     .consentBtn { width: 100%; }
+
+    /* Keep tiles in 2 columns to reduce vertical space */
+    .tileGrid { grid-template-columns: 1fr 1fr; }
+    .statValue { font-size: 20px; }
   }
   `;
   const style = document.createElement("style");
@@ -466,7 +472,8 @@ function isIsoDate(s) {
 }
 
 function clampDateToDailyList(requestedIso, dailyIsoList) {
-  if (!dailyIsoList || !dailyIsoList.length) return requestedIso || isoTodayLocal();
+  if (!dailyIsoList || !dailyIsoList.length)
+    return requestedIso || isoTodayLocal();
   if (!requestedIso || !isIsoDate(requestedIso)) return dailyIsoList[0];
 
   const min = dailyIsoList[0];
@@ -478,22 +485,18 @@ function clampDateToDailyList(requestedIso, dailyIsoList) {
 }
 
 // ============================
-// PART 1 END
-// Next: I will send PART 2 (no changes needed there, but I will re-post it clean),
-// then PART 3 with the Home page date picker + weather tile grid usage.
+// APP.JS - PART 1 END
+// Next: PART 2 (APIs + chart + location picker)
 // ============================
 // ============================
-// PART 2 BEGIN
-// (APIs + chart helpers + location picker)
-// Paste this as PART 2 of app.js
+// APP.JS - PART 2 BEGIN
+// APIs + chart + location picker
 // ============================
 
-// ----------------------------
-// Hourly filter helper
-// ----------------------------
 function filterHourlyToDate(times, values, dateIso) {
   const out = [];
   if (!times || !times.length) return out;
+
   for (let i = 0; i < times.length; i++) {
     const t = String(times[i] || "");
     if (t.slice(0, 10) === dateIso) {
@@ -564,7 +567,6 @@ async function reverseGeocode(lat, lon) {
     const name = x.name || "";
     const admin1 = x.admin1 || "";
     const country = x.country || "";
-
     const parts = [name, admin1, country].filter(Boolean);
     const label = parts.join(", ");
     return label || null;
@@ -613,11 +615,9 @@ function sunForDate(sunData, dateIso) {
 }
 
 // ----------------------------
-// API: Weather/Wind (hourly wind + daily summary)
-// - wind_speed_10m hourly (mph)
-// - wind_gusts_10m hourly (mph)
-// - precipitation_probability hourly (%)
-// - daily temp min/max (F)
+// API: Weather + Wind (hourly + daily)
+// - hourly: wind_speed_10m, wind_gusts_10m, precipitation_probability
+// - daily: temperature_2m_max, temperature_2m_min
 // ----------------------------
 async function fetchWeatherWindMulti(lat, lon) {
   const url =
@@ -638,27 +638,19 @@ async function fetchWeatherWindMulti(lat, lon) {
 
   const hourly = data && data.hourly ? data.hourly : null;
   const times = hourly && hourly.time ? hourly.time : [];
-  const spd = hourly && hourly.wind_speed_10m ? hourly.wind_speed_10m : [];
-  const gst = hourly && hourly.wind_gusts_10m ? hourly.wind_gusts_10m : [];
+  const wind = hourly && hourly.wind_speed_10m ? hourly.wind_speed_10m : [];
+  const gust = hourly && hourly.wind_gusts_10m ? hourly.wind_gusts_10m : [];
   const pop =
     hourly && hourly.precipitation_probability
       ? hourly.precipitation_probability
       : [];
 
   const daily = data && data.daily ? data.daily : null;
-  const dayList = daily && daily.time ? daily.time : [];
+  const days = daily && daily.time ? daily.time : [];
   const tmax = daily && daily.temperature_2m_max ? daily.temperature_2m_max : [];
   const tmin = daily && daily.temperature_2m_min ? daily.temperature_2m_min : [];
 
-  return {
-    times: times,
-    wind: spd,
-    gust: gst,
-    pop: pop,
-    days: dayList,
-    tmax: tmax,
-    tmin: tmin
-  };
+  return { times: times, wind: wind, gust: gust, pop: pop, days: days, tmax: tmax, tmin: tmin };
 }
 
 // ----------------------------
@@ -852,6 +844,7 @@ function renderLocationPicker(container, placeKey, onResolved) {
     placeInput.value = state.placeLabel ? state.placeLabel : "Current location";
     usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(lbl);
     setClearVisible(true);
+
     if (typeof onResolved === "function") onResolved("restored_or_existing");
   } else {
     setClearVisible(false);
@@ -979,22 +972,21 @@ function renderLocationPicker(container, placeKey, onResolved) {
 }
 
 // ============================
-// PART 2 END
-// Next: PART 3 (Home page with ONE date picker + weather tile grid usage +
-// nav updates + boot + other pages)
+// APP.JS - PART 2 END
+// Next: PART 3 (pages + exposure logic + router + boot)
 // ============================
 // ============================
-// PART 3 BEGIN
-// (Home page: ONE date picker + combined Best Times + Weather/Wind,
-// grid tiles, nav w/ Home hidden when already on Home, other pages unchanged)
-// Paste this as PART 3 of app.js
+// APP.JS - PART 3 BEGIN
+// Pages + exposure logic + router + boot
 // ============================
 
 // ----------------------------
-// UI: Header + Nav
+// Page titles + nav behavior
+// - Home is landing page (merged Weather/Wind + Best Times)
+// - Home button only shows when you are NOT on Home
 // ----------------------------
 const PAGE_TITLES = {
-  Home: "Weather and Best Times",
+  Home: "Weather/Wind + Best Times",
   "Trolling depth calculator": "Trolling Depth Calculator",
   "Species tips": "Species Tips",
   Speedometer: "Speedometer"
@@ -1033,7 +1025,7 @@ function renderHeaderAndNav() {
 
   const nav = document.getElementById("nav");
 
-  // Home is hidden while on Home. Only shows when user is on another page.
+  // Home button is hidden on Home
   const items = [];
   if (state.tool !== "Home") items.push(["Home", "Home"]);
   items.push(["Depth", "Trolling depth calculator"]);
@@ -1068,84 +1060,101 @@ function pageEl() {
 }
 
 // ----------------------------
-// Go/Caution/No-Go logic (simple, wind-based)
-// You can tweak thresholds anytime.
+// Go/Caution/No-Go logic (wind-driven)
+// NOTE: Simple safety heuristic. Always use judgment.
 // ----------------------------
-function computeGoStatus(maxSustainedMph, maxGustMph) {
+function goMeter(maxSustainedMph, maxGustMph) {
   const s = Number(maxSustainedMph);
   const g = Number(maxGustMph);
 
-  // Conservative kayak/boat-friendly thresholds
-  // GO: sustained <= 10 and gust <= 18
-  // CAUTION: sustained <= 15 and gust <= 25
-  // NO-GO: above those
-  if (!Number.isFinite(s) || !Number.isFinite(g)) {
-    return {
-      level: "CAUTION",
-      msg: "Missing wind details. Use caution and verify conditions.",
-      badgeClass: "badgeCaution"
-    };
+  // Conservative thresholds for kayaks + small boats.
+  // GO: sustained < 10 and gust < 18
+  // CAUTION: sustained 10-15 or gust 18-25
+  // NO-GO: sustained >= 16 or gust >= 26
+  if ((Number.isFinite(s) && s >= 16) || (Number.isFinite(g) && g >= 26)) {
+    return { label: "NO-GO", cls: "badgeNoGo" };
   }
-
-  if (s <= 10 && g <= 18) {
-    return {
-      level: "GO",
-      msg: "Generally favorable. Watch for local funnels, open water chop, and changing conditions.",
-      badgeClass: "badgeGo"
-    };
+  if ((Number.isFinite(s) && s >= 10) || (Number.isFinite(g) && g >= 18)) {
+    return { label: "CAUTION", cls: "badgeCaution" };
   }
-  if (s <= 15 && g <= 25) {
-    return {
-      level: "CAUTION",
-      msg: "Marginal. Expect chop and gusts. Stay near shore, plan an exit, and avoid long open-water crossings.",
-      badgeClass: "badgeCaution"
-    };
-  }
-  return {
-    level: "NO-GO",
-    msg: "High risk for kayaks and small boats. Consider postponing or fish sheltered water only with a solid safety plan.",
-    badgeClass: "badgeNoGo"
-  };
+  return { label: "GO", cls: "badgeGo" };
 }
 
-function exposureTips(tempMinF, tempMaxF, rainMaxPct) {
-  const tips = [];
+// ----------------------------
+// Exposure tips (weather-driven)
+// ----------------------------
+function fmtF(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? String(Math.round(n)) + " F" : "--";
+}
 
-  // Always
-  tips.push("Sunscreen matters even on cloudy days. Reapply and protect lips.");
-  tips.push("Bring a dry bag with a spare top and gloves. Pack a warm hat in cold weather.");
+function exposureTips(tempMinF, tempMaxF, rainMaxPct, maxSustainedMph, maxGustMph) {
+  const tips = [];
 
   const tmin = Number(tempMinF);
   const tmax = Number(tempMaxF);
   const rain = Number(rainMaxPct);
+  const s = Number(maxSustainedMph);
+  const g = Number(maxGustMph);
 
-  if (Number.isFinite(tmin) && tmin <= 40) {
-    tips.push("Cold air risk. Dress for immersion: consider a drysuit or a proper wetsuit setup.");
-    tips.push("Wind plus cold can numb hands fast. Consider neoprene gloves or pogies.");
-  } else if (Number.isFinite(tmax) && tmax >= 75) {
-    tips.push("Heat risk. Sun shirt or lightweight long sleeves help with sun and dehydration.");
-    tips.push("Bring extra water. Shade breaks help on long sessions.");
-  } else {
-    tips.push("Layering helps. Start warm and vent as you move.");
+  const isCold = Number.isFinite(tmax) && tmax <= 45;
+  const isFreezing = Number.isFinite(tmax) && tmax <= 32;
+  const isHot = Number.isFinite(tmax) && tmax >= 80;
+  const isWarm = Number.isFinite(tmax) && tmax >= 70;
+
+  const isWet = Number.isFinite(rain) && rain >= 40;
+  const isVeryWet = Number.isFinite(rain) && rain >= 70;
+
+  const isWindy = (Number.isFinite(s) && s >= 12) || (Number.isFinite(g) && g >= 20);
+
+  tips.push("Wear a PFD. Tell someone your float plan. Keep a phone in a waterproof pouch.");
+  tips.push("Bring water and a small snack. Dehydration happens in cold weather too.");
+
+  if (isCold) {
+    if (isFreezing) {
+      tips.push("Freezing conditions (" + fmtF(tmin) + " to " + fmtF(tmax) + "). Limit exposure time and plan a fast exit.");
+    } else {
+      tips.push("Cold conditions (" + fmtF(tmin) + " to " + fmtF(tmax) + "). Dress for immersion, not just the air temp.");
+    }
+    tips.push("Lean toward a drysuit. If no drysuit, use proper insulation layers (wool/synthetic), not cotton.");
+    tips.push("Pack a dry bag with a spare insulating top, warm hat, and gloves. Hands go first.");
+    if (isWindy) tips.push("Wind makes cold bite harder. Add a windproof shell and consider neoprene gloves or pogies.");
+    if (isWet) tips.push("Rain + cold is a combo. Keep your core dry with a shell and sealed bags for spare layers.");
   }
 
-  if (Number.isFinite(rain) && rain >= 40) {
-    tips.push("Rain chance is elevated. Bring a shell and keep electronics in a waterproof pouch.");
+  if (!isCold && (isWarm || isHot)) {
+    if (isHot) tips.push("Hot conditions (" + fmtF(tmin) + " to " + fmtF(tmax) + "). Heat and sun exposure add up fast.");
+    tips.push("Wear light, sun-repellent clothing (sun shirt / UPF long sleeve) and a brim hat.");
+    tips.push("Sunscreen matters. Reapply and protect lips (SPF balm).");
+    tips.push("Hydrate more than you think. Bring extra water and electrolytes if you sweat a lot.");
+    if (isWindy) tips.push("Wind can hide dehydration and sun burn. Keep covering up and stay hydrated.");
+    if (isVeryWet) tips.push("Stormy vibe (high rain chance). Consider waiting it out or fishing close to shelter.");
   }
+
+  if (!isCold && !isWarm && !isHot) {
+    tips.push("Mild day (" + fmtF(tmin) + " to " + fmtF(tmax) + "). Use layers so you can vent while you move.");
+    tips.push("Sunscreen still matters. Even in winter you can burn off glare.");
+    if (isWindy) tips.push("Add a wind layer. Wind can chill you fast after you sweat.");
+    if (isWet) tips.push("Rain chance is elevated. Pack a shell and keep electronics dry.");
+  }
+
+  if (isWet) tips.push("Bring a small towel or microfiber cloth. Keep hands dry for knots and hooks.");
+  if (isWindy) tips.push("Secure loose items. Gusts + waves love stealing hats, nets, and pliers.");
 
   return tips;
 }
 
 // ----------------------------
-// HOME PAGE (Best Times + Weather/Wind merged)
-// ONE date picker controls both sections.
+// Home page (merged Weather/Wind + Best Times)
+// ONE date picker controls both sections
 // ----------------------------
 function renderHomePage() {
   const page = pageEl();
+
   page.innerHTML =
     '<div class="card">' +
-    "  <h2>Weather and Wind</h2>" +
-    '  <div class="small">Go/Caution/No-Go, exposure tips, and best fishing time windows.</div>' +
+    "  <h2>Weather/Wind + Best Times</h2>" +
+    '  <div class="small">Pick a date once. Weather tiles + wind chart + best fishing windows auto-generate after location is set.</div>' +
     "</div>";
 
   appendHtml(
@@ -1160,12 +1169,17 @@ function renderHomePage() {
     <div class="card" id="home_times">
       <div id="home_times_out"></div>
     </div>
+
+    <div class="card" id="home_exposure">
+      <div id="home_exposure_out"></div>
+    </div>
   `
   );
 
   const controls = document.getElementById("home_controls");
   const weatherOut = document.getElementById("home_weather_out");
   const timesOut = document.getElementById("home_times_out");
+  const exposureOut = document.getElementById("home_exposure_out");
 
   if (!isIsoDate(state.homeDate)) state.homeDate = isoTodayLocal();
 
@@ -1174,195 +1188,182 @@ function renderHomePage() {
     `
     <div class="small"><strong>Date</strong></div>
     <input id="home_date" type="date" value="${escHtml(state.homeDate)}" />
-    <div class="small" style="margin-top:8px;">Date applies to both Weather/Wind and Best Times (7-day window).</div>
+    <div class="small" style="margin-top:8px;">If you choose a date outside the 7-day forecast window, it will clamp.</div>
   `
   );
 
   document.getElementById("home_date").addEventListener("change", function (e) {
     state.homeDate = String(e.target.value || "").slice(0, 10);
-    autoRunAll();
+    autoRunHome();
   });
 
   function onResolved() {
-    autoRunAll();
+    autoRunHome();
   }
 
   renderLocationPicker(controls, "home", onResolved);
 
-  async function autoRunAll() {
+  async function autoRunHome() {
     weatherOut.innerHTML = "";
     timesOut.innerHTML = "";
+    exposureOut.innerHTML = "";
 
     if (!hasResolvedLocation()) {
       weatherOut.textContent = "Pick a place or use your location first.";
       timesOut.textContent = "Pick a place or use your location first.";
+      exposureOut.textContent = "Pick a place or use your location first.";
       return;
     }
 
-    weatherOut.textContent = "Loading weather...";
+    weatherOut.textContent = "Loading weather/wind...";
     timesOut.textContent = "Loading best times...";
+    exposureOut.textContent = "Loading exposure tips...";
 
-    // --- Weather/Wind block ---
+    // ---- WEATHER/WIND
+    let maxS = null;
+    let maxG = null;
+    let maxRain = null;
+    let tMin = null;
+    let tMax = null;
+
     try {
-      const wx = await fetchWeatherWindMulti(state.lat, state.lon);
-
-      const chosenDate = clampDateToDailyList(
-        state.homeDate,
-        wx.days && wx.days.length ? wx.days : [isoTodayLocal()]
-      );
+      const w = await fetchWeatherWindMulti(state.lat, state.lon);
+      const chosenDate = clampDateToDailyList(state.homeDate, w.days && w.days.length ? w.days : [isoTodayLocal()]);
       state.homeDate = chosenDate;
 
       const inp = document.getElementById("home_date");
       if (inp && inp.value !== chosenDate) inp.value = chosenDate;
 
-      // Daily temp min/max
-      let tMin = null;
-      let tMax = null;
-      const dayIdx = wx.days ? wx.days.indexOf(chosenDate) : -1;
-      if (dayIdx >= 0) {
-        tMin = wx.tmin && wx.tmin[dayIdx] !== undefined ? Number(wx.tmin[dayIdx]) : null;
-        tMax = wx.tmax && wx.tmax[dayIdx] !== undefined ? Number(wx.tmax[dayIdx]) : null;
+      const windPts = filterHourlyToDate(w.times, w.wind, chosenDate);
+      const gustPts = filterHourlyToDate(w.times, w.gust, chosenDate);
+      const popPts = filterHourlyToDate(w.times, w.pop, chosenDate);
+
+      function maxOf(arr) {
+        let m = -Infinity;
+        for (let i = 0; i < arr.length; i++) {
+          const v = Number(arr[i].v);
+          if (Number.isFinite(v) && v > m) m = v;
+        }
+        return m === -Infinity ? null : m;
       }
 
-      // Hourly for selected date
-      const wPts = filterHourlyToDate(wx.times, wx.wind, chosenDate);
-      const gPts = filterHourlyToDate(wx.times, wx.gust, chosenDate);
-      const pPts = filterHourlyToDate(wx.times, wx.pop, chosenDate);
+      maxS = maxOf(windPts);
+      maxG = maxOf(gustPts);
+      maxRain = maxOf(popPts);
 
-      // Max sustained + max gust + max rain
-      let maxS = 0;
-      for (let i = 0; i < wPts.length; i++) maxS = Math.max(maxS, Number(wPts[i].v) || 0);
+      // Daily temps for date
+      const idx = (w.days || []).indexOf(chosenDate);
+      if (idx >= 0) {
+        tMax = Number(w.tmax && w.tmax[idx] != null ? w.tmax[idx] : null);
+        tMin = Number(w.tmin && w.tmin[idx] != null ? w.tmin[idx] : null);
+      }
 
-      let maxG = 0;
-      for (let j = 0; j < gPts.length; j++) maxG = Math.max(maxG, Number(gPts[j].v) || 0);
+      const meter = goMeter(maxS, maxG);
 
-      let maxRain = 0;
-      for (let k = 0; k < pPts.length; k++) maxRain = Math.max(maxRain, Number(pPts[k].v) || 0);
-
-      const status = computeGoStatus(maxS, maxG);
-      const tips = exposureTips(tMin, tMax, maxRain);
-
-      // Chart series uses sustained wind
-      const series = wPts.map(function (p) {
+      // Build chart series (sustained wind)
+      const series = windPts.map(function (p) {
         return { dt: p.dt, mph: p.v };
       });
 
-      // Weather tiles forced into grid (2x2)
-      const tempText =
-        Number.isFinite(tMin) && Number.isFinite(tMax)
-          ? Math.round(tMin) + " to " + Math.round(tMax) + " F"
-          : "--";
-
-      const rainText = Number.isFinite(maxRain) ? Math.round(maxRain) + " %" : "--";
-      const sText = Number.isFinite(maxS) ? Math.round(maxS) + " mph" : "--";
-      const gText = Number.isFinite(maxG) ? Math.round(maxG) + " mph" : "--";
-
-      let wh = "";
-      wh +=
-        '<div class="sectionTitle">Overview - ' +
-        escHtml(chosenDate) +
-        "</div>";
-
-      wh +=
+      // Tiles: Temp + Rain side-by-side; Sustained + Gust side-by-side
+      const tilesHtml =
+        '<div class="small"><strong>Summary - ' + escHtml(chosenDate) + "</strong></div>" +
         '<div class="tileGrid">' +
-        '<div class="statBox"><div class="statLabel">Temperature</div><div class="statValue">' +
-        escHtml(tempText) +
-        "</div></div>" +
-        '<div class="statBox"><div class="statLabel">Rain chance (max)</div><div class="statValue">' +
-        escHtml(rainText) +
-        "</div></div>" +
-        '<div class="statBox"><div class="statLabel">Max sustained wind</div><div class="statValue">' +
-        escHtml(sText) +
-        "</div></div>" +
-        '<div class="statBox"><div class="statLabel">Max gust</div><div class="statValue">' +
-        escHtml(gText) +
-        "</div></div>" +
+        '  <div class="statBox">' +
+        '    <div class="statLabel">Temp (min/max)</div>' +
+        '    <div class="statValue">' +
+        escHtml((Number.isFinite(tMin) ? Math.round(tMin) : "--") + " / " + (Number.isFinite(tMax) ? Math.round(tMax) : "--")) +
+        " F</div>" +
+        "  </div>" +
+        '  <div class="statBox">' +
+        '    <div class="statLabel">Rain chance (max)</div>' +
+        '    <div class="statValue">' +
+        escHtml(Number.isFinite(maxRain) ? Math.round(maxRain) : "--") +
+        "%</div>" +
+        "  </div>" +
+        '  <div class="statBox">' +
+        '    <div class="statLabel">Sustained wind (max)</div>' +
+        '    <div class="statValue">' +
+        escHtml(Number.isFinite(maxS) ? Math.round(maxS) : "--") +
+        " mph</div>" +
+        "  </div>" +
+        '  <div class="statBox">' +
+        '    <div class="statLabel">Gusts (max)</div>' +
+        '    <div class="statValue">' +
+        escHtml(Number.isFinite(maxG) ? Math.round(maxG) : "--") +
+        " mph</div>" +
+        "  </div>" +
         "</div>";
 
-      wh +=
+      const meterHtml =
         '<div class="meterWrap">' +
-        '<div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">' +
-        '<div style="font-weight:900;">Boating / Kayak status</div>' +
-        '<div class="meterBadge ' +
-        escHtml(status.badgeClass) +
+        '  <div class="small"><strong>Kayak/Boat: Go / Caution / No-Go</strong></div>' +
+        '  <div style="margin-top:8px; display:flex; align-items:center; gap:10px;">' +
+        '    <div class="meterBar" style="flex:1;">' +
+        '      <div class="meterSegGo"></div>' +
+        '      <div class="meterSegCaution"></div>' +
+        '      <div class="meterSegNoGo"></div>' +
+        "    </div>" +
+        '    <div class="meterBadge ' +
+        escHtml(meter.cls) +
         '">' +
-        escHtml(status.level) +
+        escHtml(meter.label) +
         "</div>" +
-        "</div>" +
-        '<div style="margin-top:10px;" class="meterBar">' +
-        '<div class="meterSegGo"></div>' +
-        '<div class="meterSegCaution"></div>' +
-        '<div class="meterSegNoGo"></div>' +
-        "</div>" +
-        '<div style="margin-top:10px;">' +
-        escHtml(status.msg) +
-        "</div>" +
+        "  </div>" +
+        '  <div class="small" style="margin-top:8px;">Based mainly on max sustained wind and max gusts for the selected day. Always use judgment.</div>' +
         "</div>";
 
-      wh +=
-        '<div class="card compact" style="margin-top:12px;">' +
-        '<div style="font-weight:900;font-size:16px;margin-bottom:6px;">Exposure tips</div>' +
-        '<ul class="list">' +
-        tips
-          .map(function (t) {
-            return "<li>" + escHtml(t) + "</li>";
-          })
-          .join("") +
-        "</ul>" +
-        "</div>";
-
-      wh +=
-        '<div class="card compact" style="margin-top:12px;">' +
-        '<div class="small"><strong>Hourly wind (mph) - ' +
-        escHtml(chosenDate) +
-        "</strong></div>" +
+      const chartHtml =
+        '<div class="card compact">' +
+        '<div class="small"><strong>Hourly sustained wind (mph)</strong></div>' +
         '<div class="chartWrap" style="margin-top:8px;">' +
-        '<canvas id="home_wind_chart" class="windChart"></canvas>' +
+        '<canvas id="wind_chart_home" class="windChart"></canvas>' +
         "</div>" +
         '<div class="small" style="margin-top:8px;">Times are local. If chart is blank, try another date.</div>' +
         "</div>";
 
-      weatherOut.innerHTML = wh;
+      weatherOut.innerHTML = tilesHtml + meterHtml + chartHtml;
 
-      const c = document.getElementById("home_wind_chart");
+      const c = document.getElementById("wind_chart_home");
       if (c && series && series.length >= 2) {
         drawWindLineChart(c, series);
 
         let resizeTimer = null;
         window.addEventListener("resize", function () {
-          if (!document.getElementById("home_wind_chart")) return;
+          if (!document.getElementById("wind_chart_home")) return;
           if (resizeTimer) clearTimeout(resizeTimer);
           resizeTimer = setTimeout(function () {
-            const c2 = document.getElementById("home_wind_chart");
+            const c2 = document.getElementById("wind_chart_home");
             if (c2) drawWindLineChart(c2, series);
           }, 120);
         });
-      } else {
-        const wrap = document.querySelector(".chartWrap");
-        if (wrap) {
-          wrap.insertAdjacentHTML(
-            "beforeend",
-            '<div class="small" style="margin-top:8px;">Not enough hourly points for a chart on this date.</div>'
-          );
-        }
       }
+
+      // Exposure tips (depends on weather)
+      const tips = exposureTips(tMin, tMax, maxRain, maxS, maxG);
+      exposureOut.innerHTML =
+        '<div class="small"><strong>Exposure tips (based on the day)</strong></div>' +
+        '<ul class="list">' +
+        tips.map(function (x) { return "<li>" + escHtml(x) + "</li>"; }).join("") +
+        "</ul>";
     } catch (e) {
       weatherOut.textContent = "Could not load weather/wind. Try again.";
+      exposureOut.textContent = "Could not load exposure tips.";
     }
 
-    // --- Best Times block ---
+    // ---- BEST TIMES
     try {
       const sunMulti = await fetchSunTimesMulti(state.lat, state.lon);
       const chosenDate2 = clampDateToDailyList(state.homeDate, sunMulti.days);
-      state.homeDate = chosenDate2;
 
+      // keep synced if sun window differs (it should match the same clamp)
+      state.homeDate = chosenDate2;
       const inp2 = document.getElementById("home_date");
       if (inp2 && inp2.value !== chosenDate2) inp2.value = chosenDate2;
 
       const sun = sunForDate(sunMulti, chosenDate2);
       if (!sun) {
-        timesOut.textContent =
-          "Could not load sunrise/sunset for that date. Try another date.";
+        timesOut.textContent = "Could not load sunrise/sunset for that date. Try another date.";
         return;
       }
 
@@ -1375,15 +1376,16 @@ function renderHomePage() {
       const eveningEnd = new Date(sunset.getTime() + 60 * 60 * 1000);
 
       timesOut.innerHTML =
-        '<div class="sectionTitle">Best Fishing Times - ' +
-        escHtml(chosenDate2) +
-        "</div>" +
+        '<div class="small"><strong>Best fishing windows</strong></div>' +
         '<div class="card compact">' +
         '  <div class="small"><strong>Morning Window</strong></div>' +
         '  <div style="font-size:20px;font-weight:900;">' +
         escHtml(formatTime(morningStart)) +
         " - " +
         escHtml(formatTime(morningEnd)) +
+        "</div>" +
+        '  <div class="small" style="margin-top:6px;opacity:0.85;">' +
+        escHtml(chosenDate2) +
         "</div>" +
         "</div>" +
         '<div class="card compact">' +
@@ -1393,17 +1395,21 @@ function renderHomePage() {
         " - " +
         escHtml(formatTime(eveningEnd)) +
         "</div>" +
+        '  <div class="small" style="margin-top:6px;opacity:0.85;">' +
+        escHtml(chosenDate2) +
+        "</div>" +
         "</div>";
-    } catch (e2) {
+    } catch (e) {
       timesOut.textContent = "Could not load sunrise/sunset. Try again.";
     }
   }
 
-  autoRunAll();
+  // Auto-run
+  autoRunHome();
 }
 
 // ----------------------------
-// Other pages (unchanged from your 1.0.6 code)
+// Other pages
 // ----------------------------
 function renderTrollingDepthPage() {
   const page = pageEl();
@@ -1620,8 +1626,8 @@ function renderSpeciesTipsPage() {
     if (!info) return;
 
     const out = document.getElementById("sp_out");
-
     let html = "";
+
     html +=
       '<div class="card compact"><div class="small"><strong>Most active water temperature range</strong></div><div style="font-size:20px;font-weight:900;">' +
       escHtml(info.temp) +
@@ -1630,53 +1636,33 @@ function renderSpeciesTipsPage() {
     if (info.baits && info.baits.length) {
       html +=
         '<div class="card compact"><div class="small"><strong>Popular baits</strong></div><ul class="list">' +
-        info.baits
-          .map(function (x) {
-            return "<li>" + escHtml(x) + "</li>";
-          })
-          .join("") +
+        info.baits.map(function (x) { return "<li>" + escHtml(x) + "</li>"; }).join("") +
         "</ul></div>";
     }
 
     if (info.rigs && info.rigs.length) {
       html +=
         '<div class="card compact"><div class="small"><strong>Common rigs</strong></div><ul class="list">' +
-        info.rigs
-          .map(function (x) {
-            return "<li>" + escHtml(x) + "</li>";
-          })
-          .join("") +
+        info.rigs.map(function (x) { return "<li>" + escHtml(x) + "</li>"; }).join("") +
         "</ul></div>";
     }
 
     if (info.Top && info.Top.length) {
       html +=
         '<div class="card compact"><div class="small"><strong>Topwater</strong></div><ul class="list">' +
-        info.Top
-          .map(function (x) {
-            return "<li>" + escHtml(x) + "</li>";
-          })
-          .join("") +
+        info.Top.map(function (x) { return "<li>" + escHtml(x) + "</li>"; }).join("") +
         "</ul></div>";
     }
     if (info.Mid && info.Mid.length) {
       html +=
         '<div class="card compact"><div class="small"><strong>Mid water</strong></div><ul class="list">' +
-        info.Mid
-          .map(function (x) {
-            return "<li>" + escHtml(x) + "</li>";
-          })
-          .join("") +
+        info.Mid.map(function (x) { return "<li>" + escHtml(x) + "</li>"; }).join("") +
         "</ul></div>";
     }
     if (info.Bottom && info.Bottom.length) {
       html +=
         '<div class="card compact"><div class="small"><strong>Bottom</strong></div><ul class="list">' +
-        info.Bottom
-          .map(function (x) {
-            return "<li>" + escHtml(x) + "</li>";
-          })
-          .join("") +
+        info.Bottom.map(function (x) { return "<li>" + escHtml(x) + "</li>"; }).join("") +
         "</ul></div>";
     }
 
@@ -1684,10 +1670,7 @@ function renderSpeciesTipsPage() {
   }
 
   renderOne(defaultSpecies);
-
-  sel.addEventListener("change", function () {
-    renderOne(sel.value);
-  });
+  sel.addEventListener("change", function () { renderOne(sel.value); });
 }
 
 function renderSpeedometerPage() {
@@ -1770,7 +1753,7 @@ function boot() {
   app = document.getElementById("app");
   if (!app) return;
 
-  // Restore last location BEFORE first render so pages auto-run immediately
+  // Restore last location BEFORE first render so Home auto-runs immediately
   const last = loadLastLocation();
   if (last) {
     state.lat = last.lat;
@@ -1792,5 +1775,5 @@ if (document.readyState === "loading") {
 }
 
 // ============================
-// PART 3 END
+// APP.JS - PART 3 END
 // ============================

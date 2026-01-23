@@ -17,8 +17,8 @@ const state = {
   speedWatchId: null,
 
   dayIso: "",
-  waterType: "small", // small | big
-  craftType: "kayak_paddle" // kayak_paddle | kayak_motor | boat_small
+  waterType: "small",
+  craftType: "kayak_paddle"
 };
 
 // ----------------------------
@@ -94,7 +94,9 @@ function filterHourlyToDate(times, values, dateIso) {
       out.push({ dt: new Date(t), v: Number(values[i]) });
     }
   }
-  return out.filter(function (x) { return Number.isFinite(x.v); });
+  return out.filter(function (x) {
+    return Number.isFinite(x.v);
+  });
 }
 
 // ----------------------------
@@ -131,7 +133,7 @@ function clearLastLocation() {
 }
 
 // ----------------------------
-// Styles
+// Styles (STACKED INPUTS)
 // ----------------------------
 (function injectStyles() {
   const css = `
@@ -145,10 +147,10 @@ function clearLastLocation() {
   .logo img { max-width: 240px; width:100%; }
   .title { font-weight:900; font-size:20px; margin-top:6px; }
 
-  .nav { margin-top: 12px; display:grid; grid-template-columns: repeat(2,1fr); gap:10px; }
+  .nav { margin-top: 12px; display:grid; grid-template-columns: 1fr; gap:10px; }
   .navBtn {
-    padding:12px;
-    border-radius:12px;
+    padding:14px;
+    border-radius:14px;
     border:1px solid #6fbf87;
     background: var(--green);
     font-weight:900;
@@ -168,8 +170,15 @@ function clearLastLocation() {
 
   .controlGrid {
     display:grid;
-    grid-template-columns: repeat(2,1fr);
+    grid-template-columns: 1fr;
     gap:10px;
+  }
+
+  .btnStack {
+    display:grid;
+    grid-template-columns: 1fr;
+    gap:10px;
+    margin-top:8px;
   }
 
   .controlTile {
@@ -177,6 +186,7 @@ function clearLastLocation() {
     border:1px solid rgba(0,0,0,0.14);
     background:#fff;
     padding:10px;
+    width:100%;
   }
 
   .controlLabel {
@@ -189,8 +199,8 @@ function clearLastLocation() {
 
   .controlField {
     width:100%;
-    padding:12px;
-    border-radius:12px;
+    padding:14px;
+    border-radius:14px;
     border:1px solid rgba(0,0,0,0.14);
     font-size:16px;
     font-weight:900;
@@ -238,6 +248,7 @@ function clearLastLocation() {
   style.textContent = css;
   document.head.appendChild(style);
 })();
+
 // ----------------------------
 // App boot
 // ----------------------------
@@ -316,7 +327,7 @@ function renderHome(el) {
     `
     <div class="card">
       <div class="title">Weather/Wind + Best Times</div>
-      <div class="small">Pick a date once. Weather tiles, wind, and best fishing windows auto-generate.</div>
+      <div class="small">Pick a date once. Weather and fishing windows auto-generate.</div>
 
       <div class="controlGrid">
         <div class="controlTile">
@@ -364,27 +375,38 @@ function renderHome(el) {
   loadWeatherAndTimes(el);
   bindHomeControls();
 }
+// app.js - PART 2 of 2
+// Continues from renderHome(el) in PART 1
 
 // ----------------------------
 // Home bindings
 // ----------------------------
 function bindHomeControls() {
-  document.getElementById("home_date").onchange = function (e) {
-    state.dayIso = e.target.value;
-    render();
-  };
+  const dateEl = document.getElementById("home_date");
+  if (dateEl) {
+    dateEl.onchange = function (e) {
+      state.dayIso = e.target.value;
+      render();
+    };
+  }
 
-  document.getElementById("home_water").value = state.waterType;
-  document.getElementById("home_water").onchange = function (e) {
-    state.waterType = e.target.value;
-    render();
-  };
+  const waterEl = document.getElementById("home_water");
+  if (waterEl) {
+    waterEl.value = state.waterType;
+    waterEl.onchange = function (e) {
+      state.waterType = e.target.value;
+      render();
+    };
+  }
 
-  document.getElementById("home_craft").value = state.craftType;
-  document.getElementById("home_craft").onchange = function (e) {
-    state.craftType = e.target.value;
-    render();
-  };
+  const craftEl = document.getElementById("home_craft");
+  if (craftEl) {
+    craftEl.value = state.craftType;
+    craftEl.onchange = function (e) {
+      state.craftType = e.target.value;
+      render();
+    };
+  }
 }
 
 // ----------------------------
@@ -396,12 +418,14 @@ function renderLocationPicker(el) {
     `
     <div class="card">
       <div class="title">Location</div>
-      <input id="loc_input" class="controlField" placeholder="City, State or ZIP">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px">
+      <input id="loc_input" class="controlField" placeholder="City, State or ZIP" value="${escHtml(
+        state.placeLabel || ""
+      )}">
+      <div class="btnStack">
         <button class="navBtn" id="loc_search">Search place</button>
         <button class="navBtn" id="loc_gps">Use my location</button>
       </div>
-      <div id="loc_matches"></div>
+      <div id="loc_matches" style="margin-top:10px"></div>
       <div class="small">Using: ${escHtml(state.placeLabel || "none")}</div>
     </div>
   `
@@ -414,7 +438,8 @@ function renderLocationPicker(el) {
     state.lon = null;
     state.placeLabel = "";
     clearLastLocation();
-    document.getElementById("loc_matches").innerHTML = "";
+    const box = document.getElementById("loc_matches");
+    if (box) box.innerHTML = "";
   });
 
   document.getElementById("loc_search").onclick = function () {
@@ -453,7 +478,16 @@ function geocodeSearch(q) {
     .then((data) => {
       const list = data && data.results ? data.results : [];
       const box = document.getElementById("loc_matches");
+      if (!box) return;
+
       box.innerHTML = "";
+
+      if (!list.length) {
+        box.innerHTML =
+          "<div class='small' style='margin-top:6px'>No matches found. Try a nearby city name.</div>";
+        return;
+      }
+
       list.forEach(function (p) {
         const label =
           p.name +
@@ -463,6 +497,7 @@ function geocodeSearch(q) {
           (p.country || "");
         const btn = document.createElement("button");
         btn.className = "navBtn";
+        btn.style.marginTop = "8px";
         btn.textContent = label;
         btn.onclick = function () {
           setResolvedLocation(p.latitude, p.longitude, label);
@@ -470,8 +505,16 @@ function geocodeSearch(q) {
         };
         box.appendChild(btn);
       });
+    })
+    .catch(function () {
+      const box = document.getElementById("loc_matches");
+      if (box) {
+        box.innerHTML =
+          "<div class='small' style='margin-top:6px'>Could not search right now. Try again.</div>";
+      }
     });
 }
+
 // ----------------------------
 // Weather + Times loader
 // ----------------------------
@@ -501,28 +544,20 @@ function loadWeatherAndTimes(el) {
       const tmax = safeNum(daily.temperature_2m_max[idx], 0);
       const rain = safeNum(daily.precipitation_probability_max[idx], 0);
 
-      const hourlyTimes = data.hourly.time || [];
-      const hourlyWind = data.hourly.wind_speed_10m || [];
-      const hourlyGust = data.hourly.wind_gusts_10m || [];
+      const hourlyTimes = (data.hourly && data.hourly.time) ? data.hourly.time : [];
+      const hourlyWind = (data.hourly && data.hourly.wind_speed_10m) ? data.hourly.wind_speed_10m : [];
+      const hourlyGust = (data.hourly && data.hourly.wind_gusts_10m) ? data.hourly.wind_gusts_10m : [];
 
-      const windDay = filterHourlyToDate(
-        hourlyTimes,
-        hourlyWind,
-        clamped
-      );
-      const gustDay = filterHourlyToDate(
-        hourlyTimes,
-        hourlyGust,
-        clamped
-      );
+      const windDay = filterHourlyToDate(hourlyTimes, hourlyWind, clamped);
+      const gustDay = filterHourlyToDate(hourlyTimes, hourlyGust, clamped);
 
       let maxS = 0;
       let maxG = 0;
 
-      windDay.forEach((x) => {
+      windDay.forEach(function (x) {
         if (x.v > maxS) maxS = x.v;
       });
-      gustDay.forEach((x) => {
+      gustDay.forEach(function (x) {
         if (x.v > maxG) maxG = x.v;
       });
 
@@ -544,6 +579,12 @@ function loadWeatherAndTimes(el) {
       renderOverview(el, tmin, tmax, rain, maxS, maxG, status);
       renderExposure(el, tmin, tmax, rain, maxS, maxG);
       renderBestTimes(el);
+    })
+    .catch(function () {
+      appendHtml(
+        el,
+        `<div class="card"><b>Could not load forecast right now.</b><div class="small">Try again in a moment.</div></div>`
+      );
     });
 }
 
@@ -560,9 +601,7 @@ function renderOverview(el, tmin, tmax, rain, maxS, maxG, status) {
       <div class="tilesGrid">
         <div class="tile">
           <div class="tileTop">Temperature</div>
-          <div class="tileVal">${Math.round(tmin)} to ${Math.round(
-      tmax
-    )} F</div>
+          <div class="tileVal">${Math.round(tmin)} to ${Math.round(tmax)} F</div>
         </div>
 
         <div class="tile">
@@ -604,14 +643,7 @@ function renderOverview(el, tmin, tmax, rain, maxS, maxG, status) {
 // ----------------------------
 // GO / CAUTION / NO-GO logic
 // ----------------------------
-function computeGoStatus(
-  tmin,
-  tmax,
-  maxS,
-  maxG,
-  waterType,
-  craftType
-) {
+function computeGoStatus(tmin, tmax, maxS, maxG, waterType, craftType) {
   let score = 0;
 
   score += maxS * 2;
@@ -659,7 +691,7 @@ function renderExposure(el, tmin, tmax, rain, maxS, maxG) {
 
   let html = "<ul class='list'>";
   tips.forEach(function (t) {
-    html += "<li>" + t + "</li>";
+    html += "<li>" + escHtml(t) + "</li>";
   });
   html += "</ul>";
 
@@ -673,18 +705,22 @@ function renderExposure(el, tmin, tmax, rain, maxS, maxG) {
   `
   );
 }
+
 function exposureTips(tmin, tmax, rain, maxS, maxG) {
   const out = [];
 
   const avg = (tmin + tmax) / 2;
 
-  // Cold leaning rules
   if (avg <= 35) {
-    out.push("Cold air/water risk. Strongly consider a drysuit or a proper cold-water wetsuit setup.");
-    out.push("Avoid cotton. Wear insulating layers that stay warm when damp (synthetic or wool).");
+    out.push(
+      "Cold air/water risk. Strongly consider a drysuit or a proper cold-water wetsuit setup."
+    );
+    out.push(
+      "Avoid cotton. Wear insulating layers that stay warm when damp (synthetic or wool)."
+    );
     out.push("Bring a dry bag with a spare warm top, gloves, and a hat.");
   } else if (avg >= 75) {
-    out.push("Hot weather: wear a sun shirt (UPF), hat, and lightweight breathable layers.");
+    out.push("Hot weather: wear a sun shirt (UPF), hat, and breathable layers.");
     out.push("Hydrate and bring electrolytes if you will be out for hours.");
     out.push("Sunscreen matters even with clouds. Reapply and protect lips.");
   } else {
@@ -763,7 +799,8 @@ function renderBestTimes(el) {
         </div>
       `
       );
-    });
+    })
+    .catch(function () {});
 }
 
 // ----------------------------
@@ -786,11 +823,10 @@ function renderDepth(el) {
           <div class="controlLabel">Weight (oz)</div>
           <input id="d_wgt" class="controlField" type="number" step="0.5" value="2">
         </div>
-      </div>
-
-      <div class="controlTile" style="margin-top:10px">
-        <div class="controlLabel">Line out (ft)</div>
-        <input id="d_out" class="controlField" type="number" step="5" value="100">
+        <div class="controlTile">
+          <div class="controlLabel">Line out (ft)</div>
+          <input id="d_out" class="controlField" type="number" step="5" value="100">
+        </div>
       </div>
 
       <button class="navBtn" id="d_calc" style="margin-top:10px">Calculate</button>
@@ -865,7 +901,8 @@ function renderSpeed(el) {
       const spd = pos.coords.speed;
       if (spd === null || spd === undefined) return;
       const mph = spd * 2.236936;
-      document.getElementById("spd_val").textContent = mph.toFixed(1) + " mph";
+      const elv = document.getElementById("spd_val");
+      if (elv) elv.textContent = mph.toFixed(1) + " mph";
     },
     function () {},
     { enableHighAccuracy: true, maximumAge: 500, timeout: 15000 }

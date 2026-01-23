@@ -5,18 +5,6 @@
 
 "use strict";
 
-/*
-  This is a single-file vanilla JS app.
-  It expects an index.html with:
-    <div id="app"></div>
-    <script src="app.js"></script>
-
-  Notes:
-  - Uses Open-Meteo for sunrise/sunset and wind.
-  - Uses Open-Meteo Geocoding for place search.
-  - Uses browser geolocation for "Use my location".
-*/
-
 // ----------------------------
 // Config
 // ----------------------------
@@ -33,7 +21,8 @@ const state = {
   lon: null,
   placeLabel: "",
   matches: [],
-  selectedIndex: 0
+  selectedIndex: 0,
+  speedWatchId: null
 };
 
 // ----------------------------
@@ -42,10 +31,56 @@ const state = {
 const app = document.getElementById("app");
 
 // ----------------------------
+// Helpers
+// ----------------------------
+function appendHtml(el, html) {
+  el.insertAdjacentHTML("beforeend", html);
+}
+
+function escHtml(s) {
+  return String(s || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatTime(d) {
+  try {
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch (e) {
+    return String(d);
+  }
+}
+
+function setResolvedLocation(lat, lon, label) {
+  state.lat = lat;
+  state.lon = lon;
+  state.placeLabel = label || "";
+}
+
+function hasResolvedLocation() {
+  return typeof state.lat === "number" && typeof state.lon === "number";
+}
+
+function normalizePlaceQuery(s) {
+  return String(s || "").trim().split(/\s+/).join(" ");
+}
+
+function clearSpeedWatch() {
+  if (state.speedWatchId !== null && navigator.geolocation) {
+    navigator.geolocation.clearWatch(state.speedWatchId);
+    state.speedWatchId = null;
+  }
+}
+
+// ----------------------------
 // Styles (neutral + light green buttons)
 // ----------------------------
 (function injectStyles() {
   const css = `
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
   .wrap { max-width: 720px; margin: 0 auto; padding: 16px 14px 44px 14px; }
   .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; }
   .logo { max-width: 70%; }
@@ -80,41 +115,6 @@ const app = document.getElementById("app");
   style.textContent = css;
   document.head.appendChild(style);
 })();
-
-// ----------------------------
-// Utilities
-// ----------------------------
-function escHtml(s) {
-  return String(s || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function formatTime(d) {
-  try {
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  } catch (e) {
-    return String(d);
-  }
-}
-
-function setResolvedLocation(lat, lon, label) {
-  state.lat = lat;
-  state.lon = lon;
-  state.placeLabel = label || "";
-}
-
-function hasResolvedLocation() {
-  return typeof state.lat === "number" && typeof state.lon === "number";
-}
-
-function normalizePlaceQuery(s) {
-  const x = String(s || "").trim().split(/\s+/).join(" ");
-  return x;
-}
 
 // ----------------------------
 // API: Geocoding
@@ -266,6 +266,7 @@ function renderHeaderAndNav() {
       const btn = document.createElement("button");
       btn.textContent = label;
       btn.addEventListener("click", () => {
+        clearSpeedWatch();
         state.tool = toolName;
         render();
       });
@@ -282,7 +283,7 @@ function pageEl() {
 // UI: Location Picker (reusable)
 // ----------------------------
 function renderLocationPicker(container, placeKey) {
-  container.innerHTML += `
+  appendHtml(container, `
     <div class="card">
       <h3>Location</h3>
       <input id="${placeKey}_place" type="text"
@@ -297,7 +298,7 @@ function renderLocationPicker(container, placeKey) {
       <div id="${placeKey}_matches" style="margin-top:10px;"></div>
       <div id="${placeKey}_using" class="small" style="margin-top:10px;"></div>
     </div>
-  `;
+  `);
 
   const usingEl = document.getElementById(placeKey + "_using");
   const matchesEl = document.getElementById(placeKey + "_matches");
@@ -391,12 +392,12 @@ function renderBestTimesPage() {
 
   renderLocationPicker(page, "times");
 
-  page.innerHTML += `
+  appendHtml(page, `
     <div class="card">
       <button id="times_go" class="dangerBtn">Display Best Fishing Times</button>
       <div id="times_out" style="margin-top:10px;"></div>
     </div>
-  `;
+  `);
 
   document.getElementById("times_go").addEventListener("click", async () => {
     const out = document.getElementById("times_out");
@@ -450,12 +451,12 @@ function renderWindPage() {
 
   renderLocationPicker(page, "wind");
 
-  page.innerHTML += `
+  appendHtml(page, `
     <div class="card">
       <button id="wind_go" class="dangerBtn">Display Winds</button>
       <div id="wind_out" style="margin-top:10px;"></div>
     </div>
-  `;
+  `);
 
   document.getElementById("wind_go").addEventListener("click", async () => {
     const out = document.getElementById("wind_out");
@@ -590,7 +591,6 @@ function renderTrollingDepthPage() {
 }
 
 function speciesDb() {
-  // Depths: Top, Mid, Bottom (only render what exists)
   return {
     "Kokanee": {
       temp: "42 to 55 F",
@@ -674,7 +674,6 @@ function renderSpeciesTipsPage() {
   const db = speciesDb();
   const speciesList = Object.keys(db).sort();
 
-  // default to Largemouth bass if present
   let defaultSpecies = "Largemouth bass";
   if (!db[defaultSpecies]) defaultSpecies = speciesList[0];
 
@@ -717,7 +716,6 @@ function renderSpeciesTipsPage() {
         `</ul></div>`;
     }
 
-    // Only show sections if present for that species
     if (info.Top && info.Top.length) {
       html += `<div class="card compact"><div class="small"><strong>Topwater</strong></div><ul class="list">` +
         info.Top.map((x) => `<li>${escHtml(x)}</li>`).join("") +
@@ -781,7 +779,9 @@ function renderSpeedometerPage() {
     return;
   }
 
-  navigator.geolocation.watchPosition(
+  clearSpeedWatch();
+
+  state.speedWatchId = navigator.geolocation.watchPosition(
     (pos) => {
       const spd = pos.coords.speed;
       const acc = pos.coords.accuracy;

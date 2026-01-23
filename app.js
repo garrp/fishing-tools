@@ -1,13 +1,14 @@
 // app.js
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.0
+// Version 1.0.1
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 
 "use strict";
 
 /*
   Single-file vanilla JS app.
-  Expects an index.html with:
+
+  Expects an index.html with ONE root:
     <main id="app"></main>
     <script src="app.js"></script>
 
@@ -16,13 +17,11 @@
   - Uses Open-Meteo Geocoding for place search.
   - Uses browser geolocation for "Use my location".
   - Reverse geocodes GPS lat/lon to a nearest city label when possible.
-  - Best Times button turns green when location is acquired.
+  - On mobile: header stacks, nav is a clean 2-column grid.
+  - Best Times button is disabled + red until location is acquired, then enabled + green.
 */
 
-// ----------------------------
-// Config
-// ----------------------------
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.0.1";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -45,38 +44,109 @@ const state = {
 const app = document.getElementById("app");
 
 // ----------------------------
-// Styles (neutral + light green buttons)
+// Styles (mobile-first cleanup)
 // ----------------------------
 (function injectStyles() {
   const css = `
-  .wrap { max-width: 720px; margin: 0 auto; padding: 16px 14px 44px 14px; }
-  .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:8px; }
-  .logo { max-width: 70%; }
-  .logo img { width: 100%; max-width: 260px; height: auto; display:block; }
-  .title { text-align:right; font-weight:800; font-size:18px; line-height:20px; }
-  .small { opacity:0.82; font-size: 13.5px; }
-  .nav { margin-top: 12px; margin-bottom: 12px; display:grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
-  .navLabel { text-align:center; font-weight:900; opacity:0.85; padding-top: 10px; }
-  .card { border-radius: 18px; padding: 16px; margin-top: 14px; border: 1px solid rgba(0,0,0,0.14); background: rgba(0,0,0,0.03); }
-  .compact { margin-top: 10px; padding: 14px 16px; }
+  :root { --green:#8fd19e; --green2:#7cc78f; --greenBorder:#6fbf87; --text:#0b2e13; }
+
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+
+  .wrap { max-width: 760px; margin: 0 auto; padding: 12px 12px 36px 12px; }
+
+  .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:6px; }
+  .logo { max-width: 60%; }
+  .logo img { width: 100%; max-width: 240px; height: auto; display:block; }
+
+  .title { text-align:right; font-weight:900; font-size:18px; line-height:20px; }
+  .small { opacity:0.82; font-size: 13px; }
+
+  .nav { margin-top: 12px; margin-bottom: 10px; display:grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+
+  .navBtn {
+    width:100%;
+    padding:10px 12px;
+    border-radius:10px;
+    border:1px solid var(--greenBorder);
+    background: var(--green);
+    color: var(--text);
+    font-weight:900;
+    cursor:pointer;
+  }
+  .navBtn:hover { background: var(--green2); }
+  .navBtn:active { background: #6bbb83; }
+  .navBtnActive {
+    background: #e9f6ee;
+    border-color: rgba(0,0,0,0.18);
+    color: rgba(0,0,0,0.78);
+    cursor: default;
+  }
+
+  .card {
+    border-radius: 16px;
+    padding: 14px;
+    margin-top: 12px;
+    border: 1px solid rgba(0,0,0,0.14);
+    background: rgba(0,0,0,0.03);
+  }
+  .compact { margin-top: 10px; padding: 12px 14px; }
+
   h2 { margin: 0 0 6px 0; font-size: 18px; }
   h3 { margin: 0 0 8px 0; font-size: 16px; }
-  input, select { width:100%; padding:10px; border-radius:10px; border:1px solid rgba(0,0,0,0.14); }
-  button { width:100%; padding:10px 12px; border-radius:10px; border:1px solid #6fbf87; background:#8fd19e; color:#0b2e13; font-weight:800; cursor:pointer; }
-  button:hover { background:#7cc78f; color:#08210f; }
-  button:active { background:#6bbb83; color:#04160a; }
+
+  input, select {
+    width:100%;
+    padding:10px;
+    border-radius:10px;
+    border:1px solid rgba(0,0,0,0.14);
+    font-size:16px;
+  }
+
+  button {
+    width:100%;
+    padding:10px 12px;
+    border-radius:10px;
+    border:1px solid var(--greenBorder);
+    background: var(--green);
+    color: var(--text);
+    font-weight:900;
+    cursor:pointer;
+  }
+  button:hover { background: var(--green2); }
+  button:active { background:#6bbb83; }
   button:disabled { background:#cfe8d6; color:#6b6b6b; border-color:#b6d6c1; cursor:not-allowed; }
+
   .btnRow { display:flex; gap:10px; margin-top:10px; }
   .btnRow > button { flex: 1; }
-  .footer { margin-top: 34px; padding-top: 18px; border-top: 1px solid rgba(0,0,0,0.14); text-align:center; font-size: 13.5px; opacity:0.90; }
+
+  .footer {
+    margin-top: 22px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(0,0,0,0.14);
+    text-align:center;
+    font-size: 13px;
+    opacity:0.90;
+  }
+
   .sectionTitle { margin-top: 12px; font-weight: 900; }
   .list { margin: 8px 0 0 18px; }
   .list li { margin-bottom: 6px; }
+
   .dangerBtn { background:#f4a3a3 !important; border-color:#e48f8f !important; color:#3b0a0a !important; }
   .dangerBtn:hover { background:#ee8f8f !important; }
+
   @media (max-width: 520px) {
-    .logo img { max-width: 70vw; }
-    .nav { grid-template-columns: repeat(2, 1fr); }
+    .wrap { padding: 10px 10px 30px 10px; }
+
+    .header { flex-direction: column; align-items:center; justify-content:center; gap:8px; }
+    .logo { max-width: 85%; }
+    .logo img { max-width: 240px; margin: 0 auto; }
+    .title { text-align:center; font-size: 18px; }
+
+    .nav { grid-template-columns: repeat(2, 1fr); gap:10px; }
+
+    .card { padding: 12px; border-radius: 14px; }
   }
   `;
   const style = document.createElement("style");
@@ -159,7 +229,6 @@ async function geocodeSearch(query, count) {
   }
 }
 
-// Reverse geocode (GPS -> nearest place label)
 async function reverseGeocode(lat, lon) {
   const url =
     "https://geocoding-api.open-meteo.com/v1/reverse" +
@@ -302,21 +371,22 @@ function renderHeaderAndNav() {
     const label = items[i][0];
     const toolName = items[i][1];
 
+    const btn = document.createElement("button");
+    btn.textContent = label;
+    btn.className = "navBtn";
+
     if (toolName === state.tool) {
-      const div = document.createElement("div");
-      div.className = "navLabel";
-      div.textContent = label;
-      nav.appendChild(div);
+      btn.classList.add("navBtnActive");
+      btn.disabled = true;
     } else {
-      const btn = document.createElement("button");
-      btn.textContent = label;
       btn.addEventListener("click", () => {
         stopSpeedWatchIfRunning();
         state.tool = toolName;
         render();
       });
-      nav.appendChild(btn);
     }
+
+    nav.appendChild(btn);
   }
 }
 
@@ -381,7 +451,7 @@ function renderLocationPicker(container, placeKey, onResolved) {
         state.selectedIndex = 0;
         matchesEl.innerHTML = "";
 
-        // Immediate feedback
+        // Immediate feedback + autofill input
         placeInput.value = "Locating nearest city...";
         usingEl.innerHTML =
           "<strong>Using:</strong> Current location (" +
@@ -489,14 +559,13 @@ function renderBestTimesPage() {
 
     if (hasResolvedLocation()) {
       btn.disabled = false;
-      btn.classList.remove("dangerBtn"); // turn green (default button style)
+      btn.classList.remove("dangerBtn"); // green
     } else {
       btn.disabled = true;
       if (!btn.classList.contains("dangerBtn")) btn.classList.add("dangerBtn"); // red
     }
   }
 
-  // Location picker can now notify us when lat/lon is set
   renderLocationPicker(page, "times", updateTimesButtonState);
 
   appendHtml(
@@ -509,7 +578,6 @@ function renderBestTimesPage() {
   `
   );
 
-  // Set initial button state (in case location already exists)
   updateTimesButtonState();
 
   document.getElementById("times_go").addEventListener("click", async () => {

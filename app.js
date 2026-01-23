@@ -1,6 +1,6 @@
 // app.js
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.5
+// Version 1.0.6
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 
 "use strict";
@@ -18,19 +18,19 @@
   - Uses browser geolocation for "Use my location".
   - Reverse geocodes GPS lat/lon to a nearest city label when possible.
   - Best times auto-displays as soon as location is acquired (no extra button).
-  - Weather/Wind auto-displays as soon as location is acquired (NO "Display Winds" button).
-  - Wind page includes a simple wind speed graph above the hours list.
-  - Adds a "Motorized kayak" option: less focus on wind, more on temperature.
+  - GA4 loads ONLY after user accepts the consent banner.
 
-  v1.0.5:
-  - Renames main nav Wind button to "Weather/Wind".
-  - Removes Display Winds button and auto-loads on resolved location.
-  - Adds wind graph above hours list.
-  - Adds motorized kayak option and adjusts rating logic.
-  - Ensures speed/gust appear next to each other in hour lines.
+  v1.0.6:
+  - Weather/Wind page auto-loads (no Display button) when location resolves.
+  - Renames Wind to Weather / Wind.
+  - Adds motorized kayak mode (temp weighted more, wind caution reduced).
+  - Today summary shown FIRST, then daily one-line-per-day forecast, then hourly graph + list.
+  - Wind speed and gust shown side-by-side everywhere (same line).
+  - Wind and temperature shown together on each daily line.
+  - Keeps wind speed graph above hourly list.
 */
 
-const APP_VERSION = "1.0.5";
+const APP_VERSION = "1.0.6";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -147,7 +147,7 @@ const state = {
   selectedIndex: 0,
   speedWatchId: null,
   bigWater: false,
-  motorizedKayak: false
+  motorized: false
 };
 
 // ----------------------------
@@ -268,27 +268,17 @@ function injectStyles() {
   .miniLbl { font-size: 13px; opacity: 0.80; }
   .miniVal { font-size: 28px; font-weight: 900; line-height: 1.0; margin-top: 6px; }
 
-  .windRow {
-    display:flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 10px;
-    flex-wrap: nowrap;
+  .windGraphWrap {
+    margin-top:10px;
   }
-  .windRowLeft { min-width: 118px; font-weight: 900; }
-  .windRowMid { flex: 1; }
-  .windRowRight { min-width: 62px; text-align:right; opacity:0.85; font-weight: 900; }
-  .windNums { font-weight: 900; }
-  .windNums small { font-weight: 700; opacity:0.85; }
-
-  .graphWrap {
-    border: 1px solid rgba(0,0,0,0.14);
-    background: rgba(255,255,255,0.55);
-    border-radius: 14px;
-    padding: 10px;
-    margin-top: 10px;
+  canvas.windGraph {
+    width:100%;
+    height:auto;
+    border-radius:14px;
+    border:1px solid rgba(0,0,0,0.14);
+    background:rgba(0,0,0,0.02);
+    display:block;
   }
-  canvas { display:block; width:100%; height: 160px; }
 
   .consentBar {
     position: fixed;
@@ -355,10 +345,6 @@ function injectStyles() {
 
     .grid2 { grid-template-columns: 1fr; }
     .miniVal { font-size: 26px; }
-
-    .windRow { flex-wrap: wrap; }
-    .windRowLeft { min-width: 100%; }
-    .windRowRight { min-width: auto; text-align:left; }
   }
   `;
   const style = document.createElement("style");
@@ -424,9 +410,7 @@ function degToCompass(deg) {
   return dirs[i];
 }
 
-// ----------------------------
 // Wind rating
-// ----------------------------
 function computeWindRating(speedMph, gustMph, bigWater) {
   const s = Number(speedMph);
   const g = Number(gustMph);
@@ -439,22 +423,6 @@ function computeWindRating(speedMph, gustMph, bigWater) {
 
   if (s >= 13 || g >= 19) return "NO GO";
   if (s > 8 || g > 12) return "CAUTION";
-  return "GO";
-}
-
-// Motorized kayak: less focus on wind (more tolerant thresholds)
-function computeWindRatingMotorized(speedMph, gustMph, bigWater) {
-  const s = Number(speedMph);
-  const g = Number(gustMph);
-
-  if (!bigWater) {
-    if (s >= 20 || g >= 30) return "NO GO";
-    if (s > 14 || g > 20) return "CAUTION";
-    return "GO";
-  }
-
-  if (s >= 16 || g >= 24) return "NO GO";
-  if (s > 11 || g > 17) return "CAUTION";
   return "GO";
 }
 
@@ -489,17 +457,27 @@ function computeTempOverride(tminF, tmaxF) {
   return "";
 }
 
-// Motorized kayak: temperature is more important; wind is secondary.
-// If temp override exists, it dominates. Otherwise, use wind rating (motorized thresholds).
-function combineRatingsForMode(windRating, tempOverride, motorized) {
+function combineRatings(windRating, tempOverride) {
   if (tempOverride === "NO GO") return "NO GO";
+  if (windRating === "NO GO") return "NO GO";
+
+  if (tempOverride === "CAUTION") return "CAUTION";
+  if (windRating === "CAUTION") return "CAUTION";
+
+  return "GO";
+}
+
+// Motorized kayak: temp matters more, wind caution matters less
+function combineRatingsMotorized(windRating, tempOverride) {
+  if (tempOverride === "NO GO") return "NO GO";
+  if (windRating === "NO GO") return "NO GO";
+
   if (tempOverride === "CAUTION") return "CAUTION";
 
-  // No temp override: fall back to wind
-  return windRating;
+  // de-emphasize wind caution
+  if (windRating === "CAUTION") return "GO";
 
-  // Note: This intentionally reduces wind dominance when motorized is true
-  // by keeping temp override as primary and using relaxed wind thresholds.
+  return "GO";
 }
 
 // ----------------------------
@@ -586,7 +564,7 @@ async function fetchSunTimes(lat, lon) {
 }
 
 // ----------------------------
-// API: Wind (hourly + daily summary)
+// API: Weather/Wind (hourly + daily summary)
 // ----------------------------
 async function fetchWind(lat, lon) {
   const url =
@@ -623,77 +601,107 @@ async function fetchWind(lat, lon) {
   };
 }
 
-function splitCurrentFutureWind(times, speeds, gusts, dirs) {
+function safeDailyNum(arr, idx) {
+  const v = arr && arr.length > idx ? Number(arr[idx]) : NaN;
+  return Number.isFinite(v) ? v : NaN;
+}
+
+function ymdToLabel(ymd) {
+  try {
+    const dt = new Date(ymd + "T12:00:00");
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    return days[dt.getDay()] + " " + (dt.getMonth() + 1) + "/" + dt.getDate();
+  } catch (e) {
+    return ymd;
+  }
+}
+
+function pickHourWindow(times, speeds, gusts, dirs, dayKey) {
   const now = new Date();
-  const current = [];
-  const future = [];
+  const items = [];
 
   for (let i = 0; i < times.length; i++) {
-    const dt = new Date(times[i]);
+    const t = String(times[i] || "");
+    if (!t.startsWith(dayKey)) continue;
 
+    const dt = new Date(t);
     const mph = Number(speeds[i]);
     const gst = Number(gusts[i]);
     const dirDeg = Number(dirs[i]);
 
-    if (!Number.isFinite(mph)) continue;
-    if (!Number.isFinite(gst)) continue;
+    if (!Number.isFinite(mph) || !Number.isFinite(gst)) continue;
 
-    const rating = state.motorizedKayak
-      ? computeWindRatingMotorized(mph, gst, state.bigWater)
-      : computeWindRating(mph, gst, state.bigWater);
-
-    const item = {
+    items.push({
+      dt: dt,
       label: formatMDTime(dt),
       mph: mph.toFixed(1),
       gust: gst.toFixed(1),
-      dir: degToCompass(dirDeg),
-      rating: rating,
-      score: mph + gst,
-      dt: dt
-    };
-
-    if (dt <= now) current.push(item);
-    else future.push(item);
+      dir: degToCompass(dirDeg)
+    });
   }
 
-  return {
-    current: current.slice(-6),
-    future: future.slice(0, 12)
-  };
+  const current = items.filter(function (x) { return x.dt <= now; }).slice(-6);
+  const future = items.filter(function (x) { return x.dt > now; }).slice(0, 12);
+
+  return { current: current, future: future };
 }
 
-function pickTodayDailySummary(daily) {
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = String(today.getMonth() + 1).padStart(2, "0");
-  const d = String(today.getDate()).padStart(2, "0");
-  const key = y + "-" + m + "-" + d;
+function renderWindGraph(canvasId, times, speeds, dayKey) {
+  const c = document.getElementById(canvasId);
+  if (!c) return;
 
-  const idx = (daily.time || []).indexOf(key);
-  if (idx < 0) return null;
-
-  function safeNum(arr) {
-    const v = arr && arr.length > idx ? Number(arr[idx]) : NaN;
-    return Number.isFinite(v) ? v : NaN;
+  const ctx = c.getContext("2d");
+  const pts = [];
+  for (let i = 0; i < times.length; i++) {
+    const t = String(times[i] || "");
+    if (!t.startsWith(dayKey)) continue;
+    const v = Number(speeds[i]);
+    if (!Number.isFinite(v)) continue;
+    pts.push(v);
   }
 
-  const maxWind = safeNum(daily.maxWind);
-  const maxGust = safeNum(daily.maxGust);
-  const tmax = safeNum(daily.tmax);
-  const tmin = safeNum(daily.tmin);
-  const rain = safeNum(daily.rain);
+  const w = c.width;
+  const h = c.height;
 
-  if (
-    !Number.isFinite(maxWind) &&
-    !Number.isFinite(maxGust) &&
-    !Number.isFinite(tmax) &&
-    !Number.isFinite(tmin) &&
-    !Number.isFinite(rain)
-  ) {
-    return null;
+  ctx.clearRect(0, 0, w, h);
+
+  if (!pts.length) {
+    ctx.font = "12px system-ui, Arial";
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.fillText("No graph data", 10, 22);
+    return;
   }
 
-  return { maxWind, maxGust, tmax, tmin, rain };
+  let maxV = 0;
+  for (let i = 0; i < pts.length; i++) if (pts[i] > maxV) maxV = pts[i];
+  if (maxV < 5) maxV = 5;
+
+  const padL = 10, padR = 10, padT = 10, padB = 18;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+
+  ctx.strokeStyle = "rgba(0,0,0,0.18)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT + innerH);
+  ctx.lineTo(padL + innerW, padT + innerH);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(0,0,0,0.75)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+
+  for (let i = 0; i < pts.length; i++) {
+    const x = padL + (innerW * i) / (pts.length - 1 || 1);
+    const y = padT + innerH - (innerH * pts[i]) / maxV;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  ctx.font = "12px system-ui, Arial";
+  ctx.fillStyle = "rgba(0,0,0,0.65)";
+  ctx.fillText("Wind speed (mph)", padL, h - 4);
 }
 
 // ----------------------------
@@ -701,7 +709,7 @@ function pickTodayDailySummary(daily) {
 // ----------------------------
 const PAGE_TITLES = {
   "Best fishing times": "Best Fishing Times",
-  "Wind forecast": "Weather / Wind",
+  "Weather / Wind": "Weather / Wind",
   "Trolling depth calculator": "Trolling Depth Calculator",
   "Species tips": "Species Tips",
   Speedometer: "Speedometer"
@@ -735,7 +743,7 @@ function renderHeaderAndNav() {
   const nav = document.getElementById("nav");
   const items = [
     ["Times", "Best fishing times"],
-    ["Weather/Wind", "Wind forecast"],
+    ["Weather/Wind", "Weather / Wind"],
     ["Depth", "Trolling depth calculator"],
     ["Tips", "Species tips"],
     ["Speed", "Speedometer"]
@@ -920,327 +928,8 @@ function renderLocationPicker(container, placeKey, onResolved) {
 }
 
 // ----------------------------
-// Wind graph (simple canvas line)
+// Pages
 // ----------------------------
-function drawWindGraph(canvas, points) {
-  if (!canvas) return;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  // Make canvas pixels match CSS size for crisp lines
-  const rect = canvas.getBoundingClientRect();
-  const w = Math.max(300, Math.round(rect.width));
-  const h = 160;
-  canvas.width = w;
-  canvas.height = h;
-
-  ctx.clearRect(0, 0, w, h);
-
-  if (!points || points.length < 2) {
-    ctx.font = "14px system-ui, Arial, sans-serif";
-    ctx.fillText("Wind graph unavailable", 10, 24);
-    return;
-  }
-
-  // Compute min/max
-  let maxVal = 0;
-  for (let i = 0; i < points.length; i++) {
-    maxVal = Math.max(maxVal, points[i].speed, points[i].gust);
-  }
-  maxVal = Math.max(5, Math.ceil(maxVal / 5) * 5);
-
-  const padL = 34;
-  const padR = 10;
-  const padT = 10;
-  const padB = 22;
-
-  function xFor(i) {
-    const span = points.length - 1;
-    return padL + ((w - padL - padR) * i) / span;
-  }
-  function yFor(v) {
-    const t = v / maxVal;
-    return (h - padB) - (h - padT - padB) * t;
-  }
-
-  // Axes
-  ctx.strokeStyle = "rgba(0,0,0,0.18)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(padL, padT);
-  ctx.lineTo(padL, h - padB);
-  ctx.lineTo(w - padR, h - padB);
-  ctx.stroke();
-
-  // Y labels (0 and max)
-  ctx.fillStyle = "rgba(0,0,0,0.70)";
-  ctx.font = "12px system-ui, Arial, sans-serif";
-  ctx.fillText(String(maxVal), 6, padT + 10);
-  ctx.fillText("0", 14, h - padB + 4);
-
-  // Speed line
-  ctx.strokeStyle = "rgba(0,0,0,0.85)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let i = 0; i < points.length; i++) {
-    const x = xFor(i);
-    const y = yFor(points[i].speed);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // Gust line (dashed)
-  ctx.strokeStyle = "rgba(0,0,0,0.45)";
-  ctx.setLineDash([6, 5]);
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let i = 0; i < points.length; i++) {
-    const x = xFor(i);
-    const y = yFor(points[i].gust);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Legend
-  ctx.fillStyle = "rgba(0,0,0,0.75)";
-  ctx.font = "12px system-ui, Arial, sans-serif";
-  ctx.fillText("Speed (solid)   Gust (dashed)", padL, h - 6);
-}
-
-// ----------------------------
-// Pages (Wind only in this half)
-// ----------------------------
-function renderWindPage() {
-  const page = pageEl();
-  page.innerHTML =
-    '<div class="card">' +
-    "  <h2>Weather / Wind</h2>" +
-    '  <div class="small">Wind speeds with gusts plus today weather summary (temp and rain). Auto-loads when a location is set.</div>' +
-    "</div>";
-
-  appendHtml(
-    page,
-    `
-    <div class="card">
-      <label style="display:flex; align-items:center; gap:10px; font-weight:900;">
-        <input id="big_water" type="checkbox" style="width:auto; transform: scale(1.2);">
-        Big water (more conservative)
-      </label>
-
-      <label style="display:flex; align-items:center; gap:10px; font-weight:900; margin-top:10px;">
-        <input id="motor_kayak" type="checkbox" style="width:auto; transform: scale(1.2);">
-        Motorized kayak (temp matters more)
-      </label>
-
-      <div class="small" style="margin-top:8px;">
-        Big water tightens wind limits. Motorized kayak relaxes wind limits and prioritizes temperature safety.
-      </div>
-    </div>
-  `
-  );
-
-  // Location picker: when resolved, auto-load wind
-  renderLocationPicker(page, "wind", autoLoadWind);
-
-  appendHtml(
-    page,
-    `
-    <div class="card">
-      <div class="small"><strong>Wind graph</strong></div>
-      <div class="graphWrap">
-        <canvas id="wind_graph"></canvas>
-      </div>
-
-      <div id="wind_out" style="margin-top:10px;"></div>
-    </div>
-  `
-  );
-
-  const bigWaterEl = document.getElementById("big_water");
-  const motorEl = document.getElementById("motor_kayak");
-
-  bigWaterEl.checked = !!state.bigWater;
-  motorEl.checked = !!state.motorizedKayak;
-
-  bigWaterEl.addEventListener("change", function () {
-    state.bigWater = !!bigWaterEl.checked;
-    autoLoadWind();
-  });
-
-  motorEl.addEventListener("change", function () {
-    state.motorizedKayak = !!motorEl.checked;
-    autoLoadWind();
-  });
-
-  async function autoLoadWind() {
-    const out = document.getElementById("wind_out");
-    const canvas = document.getElementById("wind_graph");
-    if (!out) return;
-
-    out.innerHTML = "";
-
-    if (!hasResolvedLocation()) {
-      out.innerHTML = '<div class="small">Pick a place or use your location to see weather and wind.</div>';
-      try { drawWindGraph(canvas, []); } catch (e) {}
-      return;
-    }
-
-    out.textContent = "Loading...";
-    try {
-      const w = await fetchWind(state.lat, state.lon);
-
-      const parts = splitCurrentFutureWind(
-        w.hourly.times,
-        w.hourly.speeds,
-        w.hourly.gusts,
-        w.hourly.dirs
-      );
-
-      // Points for graph: combine current+future (cap 18)
-      const allShown = parts.current.concat(parts.future).slice(0, 18);
-      const graphPoints = allShown.map(function (x) {
-        return { speed: Number(x.mph), gust: Number(x.gust) };
-      });
-      drawWindGraph(canvas, graphPoints);
-
-      // Worst hour for rating
-      let worst = null;
-      for (let i = 0; i < allShown.length; i++) {
-        const item = allShown[i];
-        if (!worst || item.score > worst.score) worst = item;
-      }
-      const windRating = worst ? worst.rating : "GO";
-
-      const daily = pickTodayDailySummary(w.daily);
-      let tempOverride = "";
-      if (daily) tempOverride = computeTempOverride(daily.tmin, daily.tmax);
-
-      const overallRating = combineRatingsForMode(
-        windRating,
-        tempOverride,
-        state.motorizedKayak
-      );
-
-      let html = "";
-
-      // Hour lines: speed and gust next to each other
-      function renderHourLine(x) {
-        return (
-          '<div class="windRow">' +
-          '  <div class="windRowLeft">' + escHtml(x.label) + "</div>" +
-          '  <div class="windRowMid">' +
-          '    <span class="windNums">' +
-          escHtml(x.mph) +
-          ' mph <small>/ gust ' +
-          escHtml(x.gust) +
-          " mph</small></span>" +
-          "  </div>" +
-          '  <div class="windRowRight">' + escHtml(x.dir) + "</div>" +
-          "</div>"
-        );
-      }
-
-      if (parts.current.length) {
-        html +=
-          '<div class="card compact">' +
-          '<div class="small"><strong>Current winds</strong></div>' +
-          '<div style="margin-top:10px;">' +
-          parts.current.map(renderHourLine).join("") +
-          "</div></div>";
-      }
-
-      if (parts.future.length) {
-        html +=
-          '<div class="card compact">' +
-          '<div class="small"><strong>Future winds</strong></div>' +
-          '<div style="margin-top:10px;">' +
-          parts.future.map(renderHourLine).join("") +
-          "</div></div>";
-      }
-
-      // Daily blocks (max wind and max gust together; temp and rain together)
-      if (daily) {
-        const maxWind = Number.isFinite(daily.maxWind) ? Math.round(daily.maxWind) : null;
-        const maxGust = Number.isFinite(daily.maxGust) ? Math.round(daily.maxGust) : null;
-        const tmaxR = Number.isFinite(daily.tmax) ? Math.round(daily.tmax) : null;
-        const tminR = Number.isFinite(daily.tmin) ? Math.round(daily.tmin) : null;
-        const rain = Number.isFinite(daily.rain) ? Math.round(daily.rain) : null;
-
-        html +=
-          '<div class="card">' +
-          '  <div class="small"><strong>Today summary</strong></div>' +
-          '  <div class="grid2">' +
-          '    <div class="miniBox"><div class="miniLbl">Max wind</div><div class="miniVal">' +
-          escHtml(maxWind === null ? "--" : String(maxWind)) +
-          " mph</div></div>" +
-          '    <div class="miniBox"><div class="miniLbl">Max gust</div><div class="miniVal">' +
-          escHtml(maxGust === null ? "--" : String(maxGust)) +
-          " mph</div></div>" +
-          '    <div class="miniBox"><div class="miniLbl">Temp hi/lo</div><div class="miniVal">' +
-          escHtml(
-            tmaxR === null || tminR === null ? "--/--" : String(tmaxR) + "/" + String(tminR)
-          ) +
-          " F</div></div>" +
-          '    <div class="miniBox"><div class="miniLbl">Rain</div><div class="miniVal">' +
-          escHtml(rain === null ? "--" : String(rain)) +
-          "%</div></div>" +
-          "  </div>" +
-          "</div>";
-      }
-
-      // Big rating button BELOW wind output
-      html +=
-        '<div class="card">' +
-        '  <div class="small"><strong>Kayak rating</strong></div>' +
-        '  <div style="margin-top:10px;">' +
-        '    <button type="button" class="' +
-        escHtml(ratingBtnClass(overallRating)) +
-        '" disabled>' +
-        escHtml(overallRating) +
-        "</button>";
-
-      if (state.motorizedKayak) {
-        html +=
-          '<div class="small" style="margin-top:8px;">Motorized mode: wind thresholds relaxed; temperature safety prioritized.</div>';
-      }
-
-      if (tempOverride) {
-        const msg =
-          tempOverride === "NO GO"
-            ? "Temperature safety override triggered."
-            : "Temperature safety caution triggered.";
-        html += '<div class="small" style="margin-top:8px;">' + escHtml(msg) + "</div>";
-      }
-
-      if (worst) {
-        html +=
-          '<div class="small" style="margin-top:8px;">Worst shown hour: ' +
-          escHtml(worst.label) +
-          " (" +
-          escHtml(worst.mph) +
-          " mph, gust " +
-          escHtml(worst.gust) +
-          " mph)</div>";
-      }
-
-      html += "  </div></div>";
-
-      out.innerHTML = html || "No wind data returned.";
-    } catch (e) {
-      out.textContent = "Could not load weather/wind. Try again.";
-      try { drawWindGraph(document.getElementById("wind_graph"), []); } catch (e2) {}
-    }
-  }
-
-  autoLoadWind();
-}
-// ----------------------------
-// Remaining pages + render router + boot
-// ----------------------------
-
 function renderBestTimesPage() {
   const page = pageEl();
   page.innerHTML =
@@ -1309,6 +998,329 @@ function renderBestTimesPage() {
   }
 
   autoLoadTimes();
+}
+
+function renderWeatherWindPage() {
+  const page = pageEl();
+  page.innerHTML =
+    '<div class="card">' +
+    "  <h2>Weather / Wind</h2>" +
+    '  <div class="small">Daily summary first, then daily forecast lines, then hourly wind with gusts and a wind speed graph.</div>' +
+    "</div>";
+
+  // Mode toggles
+  appendHtml(
+    page,
+    `
+    <div class="card">
+      <div style="display:grid; grid-template-columns: 1fr; gap:10px;">
+        <label style="display:flex; align-items:center; gap:10px; font-weight:900;">
+          <input id="big_water" type="checkbox" style="width:auto; transform: scale(1.2);">
+          Big water (more conservative wind thresholds)
+        </label>
+
+        <label style="display:flex; align-items:center; gap:10px; font-weight:900;">
+          <input id="motor_kayak" type="checkbox" style="width:auto; transform: scale(1.2);">
+          Motorized kayak (wind matters less, temp matters more)
+        </label>
+      </div>
+
+      <div class="small" style="margin-top:8px;">
+        Big water tightens wind limits. Motorized shifts rating emphasis toward temperature comfort/safety.
+      </div>
+    </div>
+  `
+  );
+
+  renderLocationPicker(page, "wind", autoLoadWeatherWind);
+
+  appendHtml(
+    page,
+    `
+    <div class="card">
+      <div id="wind_out" style="margin-top:0;"></div>
+    </div>
+  `
+  );
+
+  const bigWaterEl = document.getElementById("big_water");
+  const motorEl = document.getElementById("motor_kayak");
+
+  bigWaterEl.checked = !!state.bigWater;
+  motorEl.checked = !!state.motorized;
+
+  bigWaterEl.addEventListener("change", function () {
+    state.bigWater = !!bigWaterEl.checked;
+    autoLoadWeatherWind();
+  });
+
+  motorEl.addEventListener("change", function () {
+    state.motorized = !!motorEl.checked;
+    autoLoadWeatherWind();
+  });
+
+  async function autoLoadWeatherWind() {
+    const out = document.getElementById("wind_out");
+    if (!out) return;
+
+    if (!hasResolvedLocation()) {
+      out.innerHTML =
+        '<div class="small">Pick a place or use your location to see weather and wind.</div>';
+      return;
+    }
+
+    out.textContent = "Loading...";
+    try {
+      const w = await fetchWind(state.lat, state.lon);
+
+      const daily = w.daily || {};
+      const days = daily.time || [];
+      if (!days.length) {
+        out.textContent = "No daily data returned.";
+        return;
+      }
+
+      // Today key
+      const today = new Date();
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, "0");
+      const d = String(today.getDate()).padStart(2, "0");
+      const todayKey = y + "-" + m + "-" + d;
+
+      const todayIdx = days.indexOf(todayKey);
+      const todayDaily =
+        todayIdx >= 0
+          ? {
+              idx: todayIdx,
+              key: todayKey,
+              maxWind: safeDailyNum(daily.maxWind, todayIdx),
+              maxGust: safeDailyNum(daily.maxGust, todayIdx),
+              tmax: safeDailyNum(daily.tmax, todayIdx),
+              tmin: safeDailyNum(daily.tmin, todayIdx),
+              rain: safeDailyNum(daily.rain, todayIdx)
+            }
+          : null;
+
+      let html = "";
+
+      // ---- TODAY SUMMARY FIRST ----
+      if (todayDaily) {
+        const windRatingToday = computeWindRating(
+          todayDaily.maxWind,
+          todayDaily.maxGust,
+          state.bigWater
+        );
+        const tempOverrideToday = computeTempOverride(
+          todayDaily.tmin,
+          todayDaily.tmax
+        );
+        const overallToday = state.motorized
+          ? combineRatingsMotorized(windRatingToday, tempOverrideToday)
+          : combineRatings(windRatingToday, tempOverrideToday);
+
+        html +=
+          '<div class="card">' +
+          '  <div class="small"><strong>Today summary</strong></div>' +
+          '  <div class="grid2">' +
+          '    <div class="miniBox"><div class="miniLbl">Max wind</div><div class="miniVal">' +
+          escHtml(
+            Number.isFinite(todayDaily.maxWind)
+              ? String(Math.round(todayDaily.maxWind))
+              : "--"
+          ) +
+          " mph</div></div>" +
+          '    <div class="miniBox"><div class="miniLbl">Max gust</div><div class="miniVal">' +
+          escHtml(
+            Number.isFinite(todayDaily.maxGust)
+              ? String(Math.round(todayDaily.maxGust))
+              : "--"
+          ) +
+          " mph</div></div>" +
+          '    <div class="miniBox"><div class="miniLbl">Temp</div><div class="miniVal">' +
+          escHtml(
+            Number.isFinite(todayDaily.tmax) && Number.isFinite(todayDaily.tmin)
+              ? String(Math.round(todayDaily.tmax)) +
+                  "/" +
+                  String(Math.round(todayDaily.tmin))
+              : "--/--"
+          ) +
+          " F</div></div>" +
+          '    <div class="miniBox"><div class="miniLbl">Rain</div><div class="miniVal">' +
+          escHtml(
+            Number.isFinite(todayDaily.rain)
+              ? String(Math.round(todayDaily.rain))
+              : "--"
+          ) +
+          "%</div></div>" +
+          "  </div>" +
+          '  <div style="margin-top:10px;">' +
+          '    <button type="button" class="' +
+          escHtml(ratingBtnClass(overallToday)) +
+          '" disabled>' +
+          escHtml(overallToday) +
+          "</button>" +
+          "  </div>" +
+          "</div>";
+      }
+
+      // ---- DAILY FORECAST: ONE LINE PER DAY ----
+      html +=
+        '<div class="card">' +
+        '  <div class="small"><strong>Daily forecast</strong></div>' +
+        '  <div style="margin-top:10px;" id="daily_lines"></div>' +
+        "</div>";
+
+      const showN = Math.min(days.length, 7);
+      let lines = "";
+
+      for (let i = 0; i < showN; i++) {
+        const key = days[i];
+
+        const maxWind = safeDailyNum(daily.maxWind, i);
+        const maxGust = safeDailyNum(daily.maxGust, i);
+        const tmax = safeDailyNum(daily.tmax, i);
+        const tmin = safeDailyNum(daily.tmin, i);
+        const rain = safeDailyNum(daily.rain, i);
+
+        const windRating = computeWindRating(maxWind, maxGust, state.bigWater);
+        const tempOverride = computeTempOverride(tmin, tmax);
+
+        const overall = state.motorized
+          ? combineRatingsMotorized(windRating, tempOverride)
+          : combineRatings(windRating, tempOverride);
+
+        const dayLbl = ymdToLabel(key);
+
+        const windTxt =
+          (Number.isFinite(maxWind) ? Math.round(maxWind) : "--") +
+          " / " +
+          (Number.isFinite(maxGust) ? Math.round(maxGust) : "--");
+
+        const tempTxt =
+          (Number.isFinite(tmax) ? Math.round(tmax) : "--") +
+          " / " +
+          (Number.isFinite(tmin) ? Math.round(tmin) : "--");
+
+        const rainTxt = Number.isFinite(rain) ? Math.round(rain) : "--";
+
+        lines +=
+          '<div class="card compact" style="margin-top:10px;">' +
+          '  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">' +
+          '    <div style="font-weight:900;">' +
+          escHtml(dayLbl) +
+          "</div>" +
+          '    <div class="small" style="opacity:0.9;">Wind/Gust <strong>' +
+          escHtml(windTxt) +
+          ' mph</strong></div>' +
+          '    <div class="small" style="opacity:0.9;">Temp <strong>' +
+          escHtml(tempTxt) +
+          ' F</strong></div>' +
+          '    <div class="small" style="opacity:0.9;">Rain <strong>' +
+          escHtml(String(rainTxt)) +
+          "%</strong></div>" +
+          '    <div style="min-width:120px;">' +
+          '      <button type="button" class="' +
+          escHtml(ratingBtnClass(overall)) +
+          '" disabled>' +
+          escHtml(overall) +
+          "</button>" +
+          "    </div>" +
+          "  </div>" +
+          "</div>";
+      }
+
+      // ---- HOURLY (today): graph + current/future list ----
+      const hourDayKey =
+        todayKey &&
+        w.hourly &&
+        (w.hourly.times || []).some(function (t) {
+          return String(t || "").startsWith(todayKey);
+        })
+          ? todayKey
+          : days[0] || todayKey;
+
+      const hourParts = pickHourWindow(
+        w.hourly.times,
+        w.hourly.speeds,
+        w.hourly.gusts,
+        w.hourly.dirs,
+        hourDayKey
+      );
+
+      html +=
+        '<div class="card">' +
+        '  <div class="small"><strong>Hourly wind (today)</strong></div>' +
+        '  <div class="small" style="margin-top:6px;">Graph is for quick trend spotting. List shows wind and gust side-by-side.</div>' +
+        '  <div class="windGraphWrap">' +
+        '    <canvas id="wind_graph" class="windGraph" width="720" height="140"></canvas>' +
+        "  </div>" +
+        '  <div id="hour_blocks" style="margin-top:10px;"></div>' +
+        "</div>";
+
+      out.innerHTML = html;
+
+      // inject daily lines
+      const dailyLinesEl = document.getElementById("daily_lines");
+      if (dailyLinesEl)
+        dailyLinesEl.innerHTML =
+          lines || '<div class="small">No daily lines.</div>';
+
+      // draw graph
+      renderWindGraph("wind_graph", w.hourly.times, w.hourly.speeds, hourDayKey);
+
+      // hour blocks (wind + gust same line)
+      const hb = document.getElementById("hour_blocks");
+      if (hb) {
+        let hHtml = "";
+
+        if (hourParts.current.length) {
+          hHtml +=
+            '<div class="card compact"><div class="small"><strong>Current hours</strong></div>' +
+            '<div style="margin-top:10px;">' +
+            hourParts.current
+              .map(function (x) {
+                return (
+                  escHtml(x.label) +
+                  ": <strong>" +
+                  escHtml(x.mph) +
+                  "</strong> mph (gust <strong>" +
+                  escHtml(x.gust) +
+                  "</strong>) " +
+                  escHtml(x.dir)
+                );
+              })
+              .join("<br>") +
+            "</div></div>";
+        }
+
+        if (hourParts.future.length) {
+          hHtml +=
+            '<div class="card compact"><div class="small"><strong>Next hours</strong></div>' +
+            '<div style="margin-top:10px;">' +
+            hourParts.future
+              .map(function (x) {
+                return (
+                  escHtml(x.label) +
+                  ": <strong>" +
+                  escHtml(x.mph) +
+                  "</strong> mph (gust <strong>" +
+                  escHtml(x.gust) +
+                  "</strong>) " +
+                  escHtml(x.dir)
+                );
+              })
+              .join("<br>") +
+            "</div></div>";
+        }
+
+        hb.innerHTML = hHtml || '<div class="small">No hourly wind returned.</div>';
+      }
+    } catch (e) {
+      out.textContent = "Could not load weather and wind. Try again.";
+    }
+  }
+
+  autoLoadWeatherWind();
 }
 
 function renderTrollingDepthPage() {
@@ -1644,7 +1656,7 @@ function render() {
   renderHeaderAndNav();
 
   if (state.tool === "Best fishing times") renderBestTimesPage();
-  else if (state.tool === "Wind forecast") renderWindPage();
+  else if (state.tool === "Weather / Wind") renderWeatherWindPage();
   else if (state.tool === "Trolling depth calculator") renderTrollingDepthPage();
   else if (state.tool === "Species tips") renderSpeciesTipsPage();
   else renderSpeedometerPage();
@@ -1657,7 +1669,7 @@ function boot() {
   app = document.getElementById("app");
   if (!app) {
     const msg =
-      'Missing root element. Your index.html must contain: <main id="app"></main>';
+      "Missing root element. Your index.html must contain: <main id=\"app\"></main>";
     document.body.innerHTML =
       '<div style="padding:16px;font-family:system-ui,Arial,sans-serif;"><strong>FishyNW App Error</strong><div style="margin-top:8px;">' +
       escHtml(msg) +

@@ -572,11 +572,55 @@ function splitCurrentFutureWind(times, speeds, gusts, dirs) {
     if (!Number.isFinite(mph)) continue;
     if (!Number.isFinite(gst)) continue;
 
-    const label = dt.toLocaleString([], {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      hour: "numeric"
+   function formatMDTime(dt) {
+  // 1/23 2 AM
+  const m = dt.getMonth() + 1;
+  const d = dt.getDate();
+
+  let h = dt.getHours();
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+
+  return m + "/" + d + " " + h + " " + ampm;
+}
+
+function splitCurrentFutureWind(times, speeds, gusts, dirs) {
+  const now = new Date();
+  const current = [];
+  const future = [];
+
+  for (let i = 0; i < times.length; i++) {
+    const dt = new Date(times[i]);
+    const mph = Number(speeds[i]);
+    const gst = Number(gusts[i]);
+    const dirDeg = Number(dirs[i]);
+
+    if (!Number.isFinite(mph)) continue;
+    if (!Number.isFinite(gst)) continue;
+
+    // CHANGED: mobile-friendly label, no weekdays/month names
+    const label = formatMDTime(dt);
+
+    const item = {
+      label: label,
+      mph: mph.toFixed(1),
+      gust: gst.toFixed(1),
+      dir: degToCompass(dirDeg),
+      rating: computeWindRating(mph, gst, state.bigWater),
+      score: mph + gst
+    };
+
+    if (dt <= now) current.push(item);
+    else future.push(item);
+  }
+
+  return {
+    current: current.slice(-6),
+    future: future.slice(0, 12)
+  };
+}
+
     });
 
     const item = {

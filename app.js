@@ -1,6 +1,6 @@
 // app.js
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.2
+// Version 1.0.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 
 "use strict";
@@ -13,16 +13,23 @@
     <script src="app.js"></script>
 
   Notes:
-  - Uses Open-Meteo for sunrise/sunset and wind.
+  - Uses Open-Meteo for sunrise/sunset and wind + daily summary.
   - Uses Open-Meteo Geocoding for place search.
   - Uses browser geolocation for "Use my location".
   - Reverse geocodes GPS lat/lon to a nearest city label when possible.
-  - On mobile: header stacks, nav is a clean 2-column grid.
   - Best times auto-displays as soon as location is acquired (no extra button).
   - GA4 loads ONLY after user accepts the consent banner.
+
+  Update v1.0.3:
+  - Adds temperature-based rating overrides:
+      temp < 10F => NO GO
+      10F to < 20F => CAUTION
+      temp > 105F => NO GO
+      90F to 105F => CAUTION
+    Uses daily hi/lo when available (more conservative).
 */
 
-const APP_VERSION = "1.0.2";
+const APP_VERSION = "1.0.3";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -90,12 +97,9 @@ function renderConsentBannerIfNeeded() {
 
   if (document.getElementById("consent_bar")) return;
 
-  // Add bottom padding so the banner does not cover content
   try {
     document.body.style.paddingBottom = "120px";
-  } catch (e) {
-    // ignore
-  }
+  } catch (e) {}
 
   const bar = document.createElement("div");
   bar.id = "consent_bar";
@@ -246,7 +250,6 @@ const app = document.getElementById("app");
   .cautionBtn { background:#f1c40f !important; border-color:#d4ab0d !important; color:#3b2a00 !important; }
   .noGoBtn { background:#e74c3c !important; border-color:#cf3f31 !important; color:#2b0704 !important; }
 
-  /* 2x2 summary blocks */
   .grid2 {
     display:grid;
     grid-template-columns: repeat(2, 1fr);
@@ -263,7 +266,6 @@ const app = document.getElementById("app");
   .miniLbl { font-size: 13px; opacity: 0.80; }
   .miniVal { font-size: 28px; font-weight: 900; line-height: 1.0; margin-top: 6px; }
 
-  /* Consent banner */
   .consentBar {
     position: fixed;
     left: 0; right: 0; bottom: 0;
@@ -371,8 +373,7 @@ function hasResolvedLocation() {
 }
 
 function normalizePlaceQuery(s) {
-  const x = String(s || "").trim().split(/\s+/).join(" ");
-  return x;
+  return String(s || "").trim().split(/\s+/).join(" ");
 }
 
 function formatMDTime(dt) {
@@ -430,6 +431,45 @@ function ratingBtnClass(r) {
   if (r === "GO") return "goBtn";
   if (r === "CAUTION") return "cautionBtn";
   return "noGoBtn";
+}
+
+// Temperature overrides requested:
+// below 10F => NO GO
+// 10F to below 20F => CAUTION
+// above 105F => NO GO
+// above 90F => CAUTION
+function computeTempOverride(tminF, tmaxF) {
+  const lo = Number(tminF);
+  const hi = Number(tmaxF);
+
+  // Use hi/lo if available. If only one exists, use that.
+  const haveLo = Number.isFinite(lo);
+  const haveHi = Number.isFinite(hi);
+  if (!haveLo && !haveHi) return "";
+
+  const minTemp = haveLo ? lo : hi;
+  const maxTemp = haveHi ? hi : lo;
+
+  if (minTemp < 10) return "NO GO";
+  if (minTemp < 20) return "CAUTION";
+
+  if (maxTemp > 105) return "NO GO";
+  if (maxTemp > 90) return "CAUTION";
+
+  return "";
+}
+
+// Combine wind rating + temperature override
+function combineRatings(windRating, tempOverride) {
+  // NO GO always wins
+  if (tempOverride === "NO GO") return "NO GO";
+  if (windRating === "NO GO") return "NO GO";
+
+  // CAUTION if either says CAUTION
+  if (tempOverride === "CAUTION") return "CAUTION";
+  if (windRating === "CAUTION") return "CAUTION";
+
+  return "GO";
 }
 
 // ----------------------------
@@ -604,8 +644,6 @@ function splitCurrentFutureWind(times, speeds, gusts, dirs) {
 }
 
 function pickTodayDailySummary(daily) {
-  // Use local date of the browser. Open-Meteo "timezone=auto" should align times,
-  // but daily time is in YYYY-MM-DD, so this is a solid default.
   const today = new Date();
   const y = today.getFullYear();
   const m = String(today.getMonth() + 1).padStart(2, "0");
@@ -661,9 +699,7 @@ function stopSpeedWatchIfRunning() {
     if (state.speedWatchId !== null && navigator.geolocation) {
       navigator.geolocation.clearWatch(state.speedWatchId);
     }
-  } catch (e) {
-    // ignore
-  }
+  } catch (e) {}
   state.speedWatchId = null;
 }
 
@@ -725,7 +761,6 @@ function pageEl() {
 
 // ----------------------------
 // UI: Location Picker (reusable)
-// onResolved is optional callback fired when we have lat/lon
 // ----------------------------
 function renderLocationPicker(container, placeKey, onResolved) {
   appendHtml(
@@ -752,7 +787,6 @@ function renderLocationPicker(container, placeKey, onResolved) {
   const matchesEl = document.getElementById(placeKey + "_matches");
   const placeInput = document.getElementById(placeKey + "_place");
 
-  // Autofill input if we already have a location
   if (hasResolvedLocation()) {
     const lbl = state.placeLabel
       ? state.placeLabel
@@ -782,7 +816,6 @@ function renderLocationPicker(container, placeKey, onResolved) {
           state.selectedIndex = 0;
           matchesEl.innerHTML = "";
 
-          // Immediate feedback + autofill input
           placeInput.value = "Locating nearest city...";
           usingEl.innerHTML =
             "<strong>Using:</strong> Current location (" +
@@ -793,7 +826,6 @@ function renderLocationPicker(container, placeKey, onResolved) {
 
           if (typeof onResolved === "function") onResolved();
 
-          // Try to resolve nearest city/town name
           reverseGeocode(lat, lon).then(function (label) {
             if (label) {
               setResolvedLocation(lat, lon, label);
@@ -874,9 +906,7 @@ function renderLocationPicker(container, placeKey, onResolved) {
 
           setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
 
-          // Autofill input with chosen place label
           placeInput.value = chosen.label;
-
           usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);
 
           if (typeof onResolved === "function") onResolved();
@@ -956,7 +986,6 @@ function renderBestTimesPage() {
     }
   }
 
-  // If we already have a location, show immediately
   autoLoadTimes();
 }
 
@@ -965,10 +994,9 @@ function renderWindPage() {
   page.innerHTML =
     '<div class="card">' +
     "  <h2>Wind Forecast</h2>" +
-    '  <div class="small">Current and future wind speeds with gusts. Plus a simple go/no-go style rating.</div>' +
+    '  <div class="small">Current and future wind speeds with gusts. Includes temperature safety overrides.</div>' +
     "</div>";
 
-  // Location picker + big water toggle + display button
   appendHtml(
     page,
     `
@@ -1020,14 +1048,29 @@ function renderWindPage() {
         w.hourly.dirs
       );
 
-      // Worst hour rating across current+future slices we show
+      // Worst hour rating across shown hours
       const allShown = parts.current.concat(parts.future);
       let worst = null;
       for (let i = 0; i < allShown.length; i++) {
         const item = allShown[i];
         if (!worst || item.score > worst.score) worst = item;
       }
-      const overallRating = worst ? worst.rating : "GO";
+      const windRating = worst ? worst.rating : "GO";
+
+      // Daily summary blocks + temp override
+      const daily = pickTodayDailySummary(w.daily);
+      let tempOverride = "";
+      let tmin = NaN;
+      let tmax = NaN;
+
+      if (daily) {
+        tmin = daily.tmin;
+        tmax = daily.tmax;
+        tempOverride = computeTempOverride(tmin, tmax);
+      }
+
+      // Final rating
+      const overallRating = combineRatings(windRating, tempOverride);
 
       let html = "";
 
@@ -1070,12 +1113,11 @@ function renderWindPage() {
       }
 
       // Daily summary blocks (Max wind, Max gust, Temp hi/lo, Rain)
-      const daily = pickTodayDailySummary(w.daily);
       if (daily) {
         const maxWind = Number.isFinite(daily.maxWind) ? Math.round(daily.maxWind) : null;
         const maxGust = Number.isFinite(daily.maxGust) ? Math.round(daily.maxGust) : null;
-        const tmax = Number.isFinite(daily.tmax) ? Math.round(daily.tmax) : null;
-        const tmin = Number.isFinite(daily.tmin) ? Math.round(daily.tmin) : null;
+        const tmaxR = Number.isFinite(daily.tmax) ? Math.round(daily.tmax) : null;
+        const tminR = Number.isFinite(daily.tmin) ? Math.round(daily.tmin) : null;
         const rain = Number.isFinite(daily.rain) ? Math.round(daily.rain) : null;
 
         html +=
@@ -1090,7 +1132,7 @@ function renderWindPage() {
           " mph</div></div>" +
           '    <div class="miniBox"><div class="miniLbl">Temp</div><div class="miniVal">' +
           escHtml(
-            tmax === null || tmin === null ? "--/--" : String(tmax) + "/" + String(tmin)
+            tmaxR === null || tminR === null ? "--/--" : String(tmaxR) + "/" + String(tminR)
           ) +
           " F</div></div>" +
           '    <div class="miniBox"><div class="miniLbl">Rain</div><div class="miniVal">' +
@@ -1109,18 +1151,30 @@ function renderWindPage() {
         escHtml(ratingBtnClass(overallRating)) +
         '" disabled>' +
         escHtml(overallRating) +
-        "</button>" +
-        (worst
-          ? '<div class="small" style="margin-top:8px;">Worst shown hour: ' +
-            escHtml(worst.label) +
-            " (" +
-            escHtml(worst.mph) +
-            " mph, gust " +
-            escHtml(worst.gust) +
-            " mph)</div>"
-          : "") +
-        "  </div>" +
-        "</div>";
+        "</button>";
+
+      // Explain if temp override changed it
+      if (tempOverride) {
+        const msg =
+          tempOverride === "NO GO"
+            ? "Temperature safety override triggered."
+            : "Temperature safety caution triggered.";
+        html +=
+          '<div class="small" style="margin-top:8px;">' + escHtml(msg) + "</div>";
+      }
+
+      if (worst) {
+        html +=
+          '<div class="small" style="margin-top:8px;">Worst shown hour: ' +
+          escHtml(worst.label) +
+          " (" +
+          escHtml(worst.mph) +
+          " mph, gust " +
+          escHtml(worst.gust) +
+          " mph)</div>";
+      }
+
+      html += "  </div></div>";
 
       out.innerHTML = html || "No wind data returned.";
     } catch (e) {
@@ -1510,6 +1564,14 @@ function renderSpeedometerPage() {
 // ----------------------------
 // Render router
 // ----------------------------
+const PAGE_TITLES = {
+  "Best fishing times": "Best Fishing Times",
+  "Wind forecast": "Wind Forecast",
+  "Trolling depth calculator": "Trolling Depth Calculator",
+  "Species tips": "Species Tips",
+  Speedometer: "Speedometer"
+};
+
 function render() {
   renderHeaderAndNav();
 

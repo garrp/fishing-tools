@@ -21,8 +21,9 @@
   - Location is saved to localStorage and restored on next visit.
   - Best Times auto-displays after location is acquired and no button is shown.
   - Wind auto-displays after location is acquired and no button is shown.
-  - Wind page includes a simple line chart (canvas) for the next 24 hours (mobile-friendly).
-  - Wind page includes a GO/CAUTION/NO GO meter based on wind+gust thresholds.
+  - Best Times includes a date picker (within available forecast range).
+  - Wind includes a date picker (within available forecast range).
+  - Wind page includes a simple line chart (canvas) for the selected date (hourly).
   - GA4 loads ONLY after user accepts the consent banner.
 */
 
@@ -141,7 +142,11 @@ const LAST_LOC_KEY = "fishynw_last_location_v1"; // {lat:number, lon:number, lab
 function saveLastLocation(lat, lon, label) {
   try {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-    const payload = { lat: Number(lat), lon: Number(lon), label: String(label || "") };
+    const payload = {
+      lat: Number(lat),
+      lon: Number(lon),
+      label: String(label || "")
+    };
     localStorage.setItem(LAST_LOC_KEY, JSON.stringify(payload));
   } catch (e) {
     // ignore
@@ -172,14 +177,6 @@ function clearLastLocation() {
   }
 }
 
-function hasSavedLocation() {
-  try {
-    return !!localStorage.getItem(LAST_LOC_KEY);
-  } catch (e) {
-    return false;
-  }
-}
-
 // ----------------------------
 // Shared state
 // ----------------------------
@@ -190,7 +187,11 @@ const state = {
   placeLabel: "",
   matches: [],
   selectedIndex: 0,
-  speedWatchId: null
+  speedWatchId: null,
+
+  // Date state per section (YYYY-MM-DD)
+  timesDate: "",
+  windDate: ""
 };
 
 // ----------------------------
@@ -297,28 +298,6 @@ let app = null;
     border-radius: 12px;
     background: rgba(255,255,255,0.7);
     border: 1px solid rgba(0,0,0,0.12);
-  }
-
-  /* Meter */
-  .meterBadge {
-    display:inline-block;
-    padding: 6px 10px;
-    border-radius: 999px;
-    font-weight: 900;
-    letter-spacing: 0.3px;
-  }
-  .meterBar {
-    margin-top: 10px;
-    height: 14px;
-    border-radius: 999px;
-    background: rgba(0,0,0,0.10);
-    border: 1px solid rgba(0,0,0,0.12);
-    overflow: hidden;
-  }
-  .meterFill {
-    height: 100%;
-    width: 0%;
-    border-radius: 999px;
   }
 
   /* Consent banner */
@@ -433,63 +412,40 @@ function normalizePlaceQuery(s) {
   return x;
 }
 
-// ----------------------------
-// Wind rating (GO/CAUTION/NO GO)
-// ----------------------------
-function degToCompass(deg) {
-  const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
-  const d = Number(deg);
-  if (!Number.isFinite(d)) return "";
-  const i = Math.floor((d / 22.5) + 0.5) % 16;
-  return dirs[i];
+function isoTodayLocal() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + day;
 }
 
-function computeWindRating(speedMph, gustMph, bigWater, motorized) {
-  const s = Number(speedMph);
-  const g = Number(gustMph);
-  if (!Number.isFinite(s) || !Number.isFinite(g)) return "CAUTION";
+function isIsoDate(s) {
+  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
 
-  let noGoS = bigWater ? 13 : 16;
-  let noGoG = bigWater ? 19 : 23;
-  let cauS  = bigWater ? 8  : 10;
-  let cauG  = bigWater ? 12 : 15;
+function clampDateToDailyList(requestedIso, dailyIsoList) {
+  if (!dailyIsoList || !dailyIsoList.length) return requestedIso || isoTodayLocal();
+  if (!requestedIso || !isIsoDate(requestedIso)) return dailyIsoList[0];
 
-  if (motorized) {
-    noGoS += 2;
-    noGoG += 2;
-    cauS  += 1;
-    cauG  += 1;
+  const min = dailyIsoList[0];
+  const max = dailyIsoList[dailyIsoList.length - 1];
+
+  if (requestedIso < min) return min;
+  if (requestedIso > max) return max;
+  return requestedIso;
+}
+
+function filterHourlyToDate(times, values, dateIso) {
+  const out = [];
+  if (!times || !times.length) return out;
+  for (let i = 0; i < times.length; i++) {
+    const t = String(times[i] || "");
+    if (t.slice(0, 10) === dateIso) {
+      out.push({ dt: new Date(t), v: Number(values[i]) });
+    }
   }
-
-  if (s >= noGoS || g >= noGoG) return "NO GO";
-  if (s > cauS || g > cauG) return "CAUTION";
-  return "GO";
-}
-
-function statusColor(status) {
-  if (status === "GO") return "#2ecc71";
-  if (status === "CAUTION") return "#f1c40f";
-  return "#e74c3c";
-}
-
-function findWorstHour(series, hours) {
-  const now = new Date();
-  const end = new Date(now.getTime() + (hours || 24) * 60 * 60 * 1000);
-
-  let best = null;
-  for (let i = 0; i < series.length; i++) {
-    const p = series[i];
-    if (!p || !p.dt) continue;
-    if (p.dt < now || p.dt > end) continue;
-
-    const s = Number(p.mph);
-    const g = Number(p.gust);
-    if (!Number.isFinite(s) || !Number.isFinite(g)) continue;
-
-    const score = s + g;
-    if (!best || score > best.score) best = { score: score, dt: p.dt, mph: s, gust: g, dir: p.dir };
-  }
-  return best;
+  return out.filter(function (x) { return Number.isFinite(x.v); });
 }
 
 // ----------------------------
@@ -501,8 +457,10 @@ async function geocodeSearch(query, count) {
 
   const url =
     "https://geocoding-api.open-meteo.com/v1/search" +
-    "?name=" + encodeURIComponent(q) +
-    "&count=" + encodeURIComponent(count || 10) +
+    "?name=" +
+    encodeURIComponent(q) +
+    "&count=" +
+    encodeURIComponent(count || 10) +
     "&language=en&format=json";
 
   try {
@@ -516,7 +474,11 @@ async function geocodeSearch(query, count) {
         const admin1 = x.admin1 || "";
         const country = x.country || "";
         const parts = [name, admin1, country].filter(Boolean);
-        return { label: parts.join(", "), lat: Number(x.latitude), lon: Number(x.longitude) };
+        return {
+          label: parts.join(", "),
+          lat: Number(x.latitude),
+          lon: Number(x.longitude)
+        };
       })
       .filter(function (x) {
         return Number.isFinite(x.lat) && Number.isFinite(x.lon);
@@ -529,8 +491,10 @@ async function geocodeSearch(query, count) {
 async function reverseGeocode(lat, lon) {
   const url =
     "https://geocoding-api.open-meteo.com/v1/reverse" +
-    "?latitude=" + encodeURIComponent(lat) +
-    "&longitude=" + encodeURIComponent(lon) +
+    "?latitude=" +
+    encodeURIComponent(lat) +
+    "&longitude=" +
+    encodeURIComponent(lon) +
     "&language=en&format=json";
 
   try {
@@ -553,87 +517,73 @@ async function reverseGeocode(lat, lon) {
 }
 
 // ----------------------------
-// API: Best times
+// API: Best times (sunrise/sunset) - fetch multiple days
 // ----------------------------
-async function fetchSunTimes(lat, lon) {
+async function fetchSunTimesMulti(lat, lon) {
   const url =
     "https://api.open-meteo.com/v1/forecast" +
-    "?latitude=" + encodeURIComponent(lat) +
-    "&longitude=" + encodeURIComponent(lon) +
-    "&daily=sunrise,sunset&timezone=auto";
+    "?latitude=" +
+    encodeURIComponent(lat) +
+    "&longitude=" +
+    encodeURIComponent(lon) +
+    "&daily=sunrise,sunset" +
+    "&forecast_days=7" +
+    "&timezone=auto";
 
   const r = await fetch(url);
   const data = await r.json();
-  const sr = data && data.daily && data.daily.sunrise ? data.daily.sunrise[0] : null;
-  const ss = data && data.daily && data.daily.sunset ? data.daily.sunset[0] : null;
+
+  const daily = data && data.daily ? data.daily : null;
+  const days = daily && daily.time ? daily.time : [];
+  const sr = daily && daily.sunrise ? daily.sunrise : [];
+  const ss = daily && daily.sunset ? daily.sunset : [];
+
+  return { days: days, sunrise: sr, sunset: ss };
+}
+
+function sunForDate(sunData, dateIso) {
+  if (!sunData || !sunData.days || !sunData.days.length) return null;
+  const idx = sunData.days.indexOf(dateIso);
+  if (idx < 0) return null;
+
+  const sr = sunData.sunrise && sunData.sunrise[idx] ? sunData.sunrise[idx] : null;
+  const ss = sunData.sunset && sunData.sunset[idx] ? sunData.sunset[idx] : null;
   if (!sr || !ss) return null;
 
   return { sunrise: new Date(sr), sunset: new Date(ss) };
 }
 
 // ----------------------------
-// API: Wind (speed + gust + dir)
+// API: Wind - fetch hourly wind speeds multiple days
 // ----------------------------
-async function fetchWind(lat, lon) {
+async function fetchWindMulti(lat, lon) {
   const url =
     "https://api.open-meteo.com/v1/forecast" +
-    "?latitude=" + encodeURIComponent(lat) +
-    "&longitude=" + encodeURIComponent(lon) +
-    "&hourly=wind_speed_10m,wind_gusts_10m,wind_direction_10m" +
-    "&wind_speed_unit=mph&timezone=auto";
+    "?latitude=" +
+    encodeURIComponent(lat) +
+    "&longitude=" +
+    encodeURIComponent(lon) +
+    "&hourly=wind_speed_10m" +
+    "&wind_speed_unit=mph" +
+    "&forecast_days=7" +
+    "&timezone=auto";
 
   const r = await fetch(url);
   const data = await r.json();
+  const hourly = data && data.hourly ? data.hourly : null;
 
-  const times = data && data.hourly && data.hourly.time ? data.hourly.time : [];
-  const speeds = data && data.hourly && data.hourly.wind_speed_10m ? data.hourly.wind_speed_10m : [];
-  const gusts = data && data.hourly && data.hourly.wind_gusts_10m ? data.hourly.wind_gusts_10m : [];
-  const dirs = data && data.hourly && data.hourly.wind_direction_10m ? data.hourly.wind_direction_10m : [];
+  const times = hourly && hourly.time ? hourly.time : [];
+  const speeds = hourly && hourly.wind_speed_10m ? hourly.wind_speed_10m : [];
 
-  return { times: times, speeds: speeds, gusts: gusts, dirs: dirs };
-}
+  // Also try to expose the daily list for date clamping
+  const daily = data && data.daily ? data.daily : null;
+  const dayList = daily && daily.time ? daily.time : [];
 
-function nextHoursWindSeries(times, speeds, gusts, dirs, hours) {
-  const now = new Date();
-  const end = new Date(now.getTime() + (hours || 24) * 60 * 60 * 1000);
-
-  const series = [];
-  for (let i = 0; i < times.length; i++) {
-    const dt = new Date(times[i]);
-    if (!(dt >= now && dt <= end)) continue;
-
-    const mph = Number(speeds[i]);
-    const g = Number(gusts[i]);
-    const d = Number(dirs[i]);
-    if (!Number.isFinite(mph)) continue;
-    if (!Number.isFinite(g)) continue;
-
-    series.push({ dt: dt, mph: mph, gust: g, dir: degToCompass(d) });
-  }
-
-  // fallback: take first 24 future points if something weird happens
-  if (series.length < 6) {
-    const future = [];
-    for (let j = 0; j < times.length; j++) {
-      const dt2 = new Date(times[j]);
-      if (dt2 < now) continue;
-
-      const mph2 = Number(speeds[j]);
-      const g2 = Number(gusts[j]);
-      const d2 = Number(dirs[j]);
-      if (!Number.isFinite(mph2) || !Number.isFinite(g2)) continue;
-
-      future.push({ dt: dt2, mph: mph2, gust: g2, dir: degToCompass(d2) });
-      if (future.length >= 24) break;
-    }
-    return future;
-  }
-
-  return series;
+  return { times: times, speeds: speeds, days: dayList };
 }
 
 // ----------------------------
-// Simple canvas line chart (wind speed only)
+// Simple canvas line chart (wind)
 // ----------------------------
 function drawWindLineChart(canvas, points) {
   if (!canvas || !canvas.getContext) return;
@@ -688,6 +638,7 @@ function drawWindLineChart(canvas, points) {
     return padT + (1 - t) * h;
   }
 
+  // Grid lines
   ctx.strokeStyle = "rgba(0,0,0,0.10)";
   ctx.lineWidth = 1;
   for (let g = 0; g <= 2; g++) {
@@ -698,12 +649,18 @@ function drawWindLineChart(canvas, points) {
     ctx.stroke();
   }
 
+  // Y labels
   ctx.fillStyle = "rgba(0,0,0,0.70)";
   ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
-  ctx.fillText(String(Math.round(maxV)) + " mph", 6, padT + 12);
-  ctx.fillText(String(Math.round((minV + maxV) / 2)) + " mph", 6, padT + h / 2 + 4);
-  ctx.fillText(String(Math.round(minV)) + " mph", 6, padT + h + 4);
+  const yTop = maxV;
+  const yMid = (minV + maxV) / 2;
+  const yBot = minV;
 
+  ctx.fillText(String(Math.round(yTop)) + " mph", 6, padT + 12);
+  ctx.fillText(String(Math.round(yMid)) + " mph", 6, padT + h / 2 + 4);
+  ctx.fillText(String(Math.round(yBot)) + " mph", 6, padT + h + 4);
+
+  // Line
   ctx.strokeStyle = "rgba(7,27,31,0.75)";
   ctx.lineWidth = 2;
 
@@ -714,6 +671,7 @@ function drawWindLineChart(canvas, points) {
   }
   ctx.stroke();
 
+  // Dots
   ctx.fillStyle = "rgba(7,27,31,0.70)";
   for (let d = 0; d < points.length; d++) {
     const xx = xFor(d);
@@ -723,6 +681,7 @@ function drawWindLineChart(canvas, points) {
     ctx.fill();
   }
 
+  // X labels
   function hourLabel(dt) {
     try {
       return dt.toLocaleTimeString([], { hour: "numeric" });
@@ -730,7 +689,6 @@ function drawWindLineChart(canvas, points) {
       return "";
     }
   }
-
   const iStart = 0;
   const iMid = Math.floor((points.length - 1) / 2);
   const iEnd = points.length - 1;
@@ -764,7 +722,9 @@ function stopSpeedWatchIfRunning() {
     if (state.speedWatchId !== null && navigator.geolocation) {
       navigator.geolocation.clearWatch(state.speedWatchId);
     }
-  } catch (e) {}
+  } catch (e) {
+    // ignore
+  }
   state.speedWatchId = null;
 }
 
@@ -774,10 +734,14 @@ function renderHeaderAndNav() {
   app.innerHTML =
     '<div class="wrap">' +
     '  <div class="header">' +
-    '    <div class="logo"><img src="' + escHtml(LOGO_URL) + '" alt="FishyNW"></div>' +
+    '    <div class="logo"><img src="' +
+    escHtml(LOGO_URL) +
+    '" alt="FishyNW"></div>' +
     '    <div class="title">' +
     escHtml(title) +
-    '<div class="small">v ' + escHtml(APP_VERSION) + "</div></div>" +
+    '<div class="small">v ' +
+    escHtml(APP_VERSION) +
+    "</div></div>" +
     "  </div>" +
     '  <div class="nav" id="nav"></div>' +
     '  <div id="page"></div>' +
@@ -822,11 +786,10 @@ function pageEl() {
 
 // ----------------------------
 // UI: Location Picker (reusable)
-// - hides Clear saved location if no saved location AND no resolved location
+// - hides Clear button until a location is resolved
+// - onResolved fires when we have lat/lon (or "cleared")
 // ----------------------------
 function renderLocationPicker(container, placeKey, onResolved) {
-  const showClear = hasSavedLocation() || hasResolvedLocation();
-
   appendHtml(
     container,
     `
@@ -844,11 +807,9 @@ function renderLocationPicker(container, placeKey, onResolved) {
       <div id="${placeKey}_matches" style="margin-top:10px;"></div>
       <div id="${placeKey}_using" class="small" style="margin-top:10px;"></div>
 
-      ${showClear ? `
-      <div style="margin-top:10px;">
+      <div id="${placeKey}_clear_wrap" style="margin-top:10px; display:none;">
         <button id="${placeKey}_clear" type="button" class="consentDecline">Clear saved location</button>
       </div>
-      ` : ``}
     </div>
   `
   );
@@ -856,25 +817,29 @@ function renderLocationPicker(container, placeKey, onResolved) {
   const usingEl = document.getElementById(placeKey + "_using");
   const matchesEl = document.getElementById(placeKey + "_matches");
   const placeInput = document.getElementById(placeKey + "_place");
-
+  const clearWrap = document.getElementById(placeKey + "_clear_wrap");
   const clearBtn = document.getElementById(placeKey + "_clear");
-  if (clearBtn) {
-    clearBtn.addEventListener("click", function () {
-      clearLastLocation();
 
-      state.lat = null;
-      state.lon = null;
-      state.placeLabel = "";
-      state.matches = [];
-      state.selectedIndex = 0;
-
-      matchesEl.innerHTML = "";
-      placeInput.value = "";
-      usingEl.textContent = "Saved location cleared. Search a place or use your location.";
-
-      if (typeof onResolved === "function") onResolved("cleared");
-    });
+  function setClearVisible(isVisible) {
+    clearWrap.style.display = isVisible ? "block" : "none";
   }
+
+  clearBtn.addEventListener("click", function () {
+    clearLastLocation();
+
+    state.lat = null;
+    state.lon = null;
+    state.placeLabel = "";
+    state.matches = [];
+    state.selectedIndex = 0;
+
+    matchesEl.innerHTML = "";
+    placeInput.value = "";
+    usingEl.textContent = "Saved location cleared. Search a place or use your location.";
+    setClearVisible(false);
+
+    if (typeof onResolved === "function") onResolved("cleared");
+  });
 
   if (hasResolvedLocation()) {
     const lbl = state.placeLabel
@@ -883,7 +848,10 @@ function renderLocationPicker(container, placeKey, onResolved) {
 
     placeInput.value = state.placeLabel ? state.placeLabel : "Current location";
     usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(lbl);
+    setClearVisible(true);
     if (typeof onResolved === "function") onResolved("restored_or_existing");
+  } else {
+    setClearVisible(false);
   }
 
   document.getElementById(placeKey + "_gps").addEventListener("click", function () {
@@ -902,11 +870,15 @@ function renderLocationPicker(container, placeKey, onResolved) {
         state.matches = [];
         state.selectedIndex = 0;
         matchesEl.innerHTML = "";
+        setClearVisible(true);
 
         placeInput.value = "Locating nearest city...";
         usingEl.innerHTML =
           "<strong>Using:</strong> Current location (" +
-          lat.toFixed(4) + ", " + lon.toFixed(4) + ")";
+          lat.toFixed(4) +
+          ", " +
+          lon.toFixed(4) +
+          ")";
 
         if (typeof onResolved === "function") onResolved("gps");
 
@@ -917,7 +889,11 @@ function renderLocationPicker(container, placeKey, onResolved) {
             usingEl.innerHTML =
               "<strong>Using:</strong> " +
               escHtml(label) +
-              " (" + lat.toFixed(4) + ", " + lon.toFixed(4) + ")";
+              " (" +
+              lat.toFixed(4) +
+              ", " +
+              lon.toFixed(4) +
+              ")";
           } else {
             placeInput.value = "Current location";
           }
@@ -958,20 +934,25 @@ function renderLocationPicker(container, placeKey, onResolved) {
 
     matchesEl.innerHTML =
       '<label class="small"><strong>Choose the correct match</strong></label>' +
-      '<select id="' + placeKey + '_select">' + optionsHtml + "</select>" +
+      '<select id="' + placeKey + '_select">' +
+      optionsHtml +
+      "</select>" +
       '<div style="margin-top:10px;">' +
       '<button id="' + placeKey + '_use" style="width:100%;">Use this place</button>' +
       "</div>";
 
-    document.getElementById(placeKey + "_select").addEventListener("change", function (e) {
-      state.selectedIndex = Number(e.target.value);
-    });
+    document
+      .getElementById(placeKey + "_select")
+      .addEventListener("change", function (e) {
+        state.selectedIndex = Number(e.target.value);
+      });
 
     document.getElementById(placeKey + "_use").addEventListener("click", function () {
       const chosen = state.matches[state.selectedIndex];
       if (!chosen) return;
 
       setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
+      setClearVisible(true);
 
       placeInput.value = chosen.label;
       usingEl.innerHTML = "<strong>Using:</strong> " + escHtml(chosen.label);
@@ -984,14 +965,14 @@ function renderLocationPicker(container, placeKey, onResolved) {
 }
 
 // ----------------------------
-// Pages: Best Times (unchanged)
+// Pages
 // ----------------------------
 function renderBestTimesPage() {
   const page = pageEl();
   page.innerHTML =
     '<div class="card">' +
     "  <h2>Best Fishing Times</h2>" +
-    '  <div class="small">Auto-displays times after location is acquired.</div>' +
+    '  <div class="small">Auto-displays times after location is acquired. Includes a date picker.</div>' +
     "</div>";
 
   appendHtml(
@@ -1008,9 +989,27 @@ function renderBestTimesPage() {
   const controls = document.getElementById("times_controls");
   const out = document.getElementById("times_out");
 
+  // Default date
+  if (!isIsoDate(state.timesDate)) state.timesDate = isoTodayLocal();
+
   function onResolved() {
     autoDisplayTimes();
   }
+
+  // Controls content: date picker + location picker
+  appendHtml(
+    controls,
+    `
+    <div class="small"><strong>Date</strong></div>
+    <input id="times_date" type="date" value="${escHtml(state.timesDate)}" />
+    <div class="small" style="margin-top:8px;">If you choose a date outside the 7-day forecast window, it will clamp.</div>
+  `
+  );
+
+  document.getElementById("times_date").addEventListener("change", function (e) {
+    state.timesDate = String(e.target.value || "").slice(0, 10);
+    autoDisplayTimes();
+  });
 
   renderLocationPicker(controls, "times", onResolved);
 
@@ -1024,9 +1023,17 @@ function renderBestTimesPage() {
 
     out.textContent = "Loading...";
     try {
-      const sun = await fetchSunTimes(state.lat, state.lon);
+      const sunMulti = await fetchSunTimesMulti(state.lat, state.lon);
+      const chosenDate = clampDateToDailyList(state.timesDate, sunMulti.days);
+      state.timesDate = chosenDate;
+
+      // Keep the input synced if clamped
+      const inp = document.getElementById("times_date");
+      if (inp && inp.value !== chosenDate) inp.value = chosenDate;
+
+      const sun = sunForDate(sunMulti, chosenDate);
       if (!sun) {
-        out.textContent = "Could not load sunrise/sunset. Try again.";
+        out.textContent = "Could not load sunrise/sunset for that date. Try another date.";
         return;
       }
 
@@ -1046,6 +1053,9 @@ function renderBestTimesPage() {
         " - " +
         escHtml(formatTime(morningEnd)) +
         "</div>" +
+        '  <div class="small" style="margin-top:6px;opacity:0.85;">' +
+        escHtml(chosenDate) +
+        "</div>" +
         "</div>" +
         '<div class="card compact">' +
         '  <div class="small"><strong>Evening Window</strong></div>' +
@@ -1054,28 +1064,30 @@ function renderBestTimesPage() {
         " - " +
         escHtml(formatTime(eveningEnd)) +
         "</div>" +
+        '  <div class="small" style="margin-top:6px;opacity:0.85;">' +
+        escHtml(chosenDate) +
+        "</div>" +
         "</div>";
     } catch (e) {
       out.textContent = "Could not load sunrise/sunset. Try again.";
     }
   }
+
+  // Auto-run if location already exists
+  autoDisplayTimes();
 }
 
-// ----------------------------
-// Pages: Wind (meter + chart + cards)
-// ----------------------------
 function renderWindPage() {
   const page = pageEl();
   page.innerHTML =
     '<div class="card">' +
     "  <h2>Wind Forecast</h2>" +
-    '  <div class="small">Auto-displays winds after location is acquired. Includes a safety meter.</div>' +
+    '  <div class="small">Auto-displays winds after location is acquired. Includes a date picker.</div>' +
     "</div>";
 
   appendHtml(
     page,
     `
-    <div class="card" id="wind_options"></div>
     <div class="card" id="wind_controls"></div>
 
     <div class="card" id="wind_results">
@@ -1084,45 +1096,28 @@ function renderWindPage() {
   `
   );
 
-  const opt = document.getElementById("wind_options");
   const controls = document.getElementById("wind_controls");
   const out = document.getElementById("wind_out");
 
-  opt.innerHTML = `
-    <div class="small"><strong>Options</strong></div>
-    <div class="btnRow" style="margin-top:10px;">
-      <button id="opt_big" type="button">Big water: OFF</button>
-      <button id="opt_motor" type="button">Motorized: OFF</button>
-    </div>
-    <div class="small" style="margin-top:8px;">
-      Big water is more conservative. Motorized is slightly less conservative.
-    </div>
-  `;
-
-  const opts = { bigWater: false, motorized: false };
-
-  function refreshOptButtons() {
-    document.getElementById("opt_big").textContent = "Big water: " + (opts.bigWater ? "ON" : "OFF");
-    document.getElementById("opt_motor").textContent = "Motorized: " + (opts.motorized ? "ON" : "OFF");
-  }
-
-  document.getElementById("opt_big").addEventListener("click", function () {
-    opts.bigWater = !opts.bigWater;
-    refreshOptButtons();
-    autoDisplayWinds();
-  });
-
-  document.getElementById("opt_motor").addEventListener("click", function () {
-    opts.motorized = !opts.motorized;
-    refreshOptButtons();
-    autoDisplayWinds();
-  });
-
-  refreshOptButtons();
+  if (!isIsoDate(state.windDate)) state.windDate = isoTodayLocal();
 
   function onResolved() {
     autoDisplayWinds();
   }
+
+  appendHtml(
+    controls,
+    `
+    <div class="small"><strong>Date</strong></div>
+    <input id="wind_date" type="date" value="${escHtml(state.windDate)}" />
+    <div class="small" style="margin-top:8px;">Chart is hourly for the selected date (7-day window).</div>
+  `
+  );
+
+  document.getElementById("wind_date").addEventListener("change", function (e) {
+    state.windDate = String(e.target.value || "").slice(0, 10);
+    autoDisplayWinds();
+  });
 
   renderLocationPicker(controls, "wind", onResolved);
 
@@ -1136,80 +1131,45 @@ function renderWindPage() {
 
     out.textContent = "Loading...";
     try {
-      const w = await fetchWind(state.lat, state.lon);
+      const w = await fetchWindMulti(state.lat, state.lon);
+      const chosenDate = clampDateToDailyList(state.windDate, w.days && w.days.length ? w.days : [isoTodayLocal()]);
+      state.windDate = chosenDate;
 
-      const series = nextHoursWindSeries(w.times, w.speeds, w.gusts, w.dirs, 24);
-      const worst = findWorstHour(series, 24);
+      const inp = document.getElementById("wind_date");
+      if (inp && inp.value !== chosenDate) inp.value = chosenDate;
 
-      // Determine meter status from worst hour
-      const status = worst
-        ? computeWindRating(worst.mph, worst.gust, opts.bigWater, opts.motorized)
-        : "CAUTION";
+      const pts = filterHourlyToDate(w.times, w.speeds, chosenDate);
 
-      const badgeBg = statusColor(status);
-      const fillPct = worst ? Math.max(0, Math.min(100, Math.round((worst.gust / 25) * 100))) : 0;
+      // Build chart series
+      const series = pts.map(function (p) {
+        return { dt: p.dt, mph: p.v };
+      });
+
+      // Build hour list (compact)
+      const list = pts.slice(0, 24).map(function (p) {
+        const label = p.dt.toLocaleTimeString([], { hour: "numeric" });
+        return label + ": <strong>" + String(p.v.toFixed(1)) + " mph</strong>";
+      });
 
       let html = "";
-
-      // Meter card
       html +=
         '<div class="card compact">' +
-        '<div class="small"><strong>Wind meter (next 24 hours)</strong></div>' +
-        '<div style="margin-top:8px;">' +
-        '<span class="meterBadge" style="background:' + escHtml(badgeBg) + ';color:#0b0f12;">' +
-        escHtml(status) +
-        "</span>" +
-        "</div>" +
-        '<div class="meterBar">' +
-        '<div class="meterFill" style="width:' + escHtml(String(fillPct)) + '%;background:' + escHtml(badgeBg) + ';"></div>' +
-        "</div>" +
-        '<div class="small" style="margin-top:8px;">Based on wind + gust thresholds. Use judgment.</div>' +
-        (opts.bigWater || opts.motorized
-          ? '<div class="small" style="margin-top:6px;"><strong>Options:</strong> ' +
-            escHtml((opts.bigWater ? "Big water" : "") + (opts.bigWater && opts.motorized ? " | " : "") + (opts.motorized ? "Motorized" : "")) +
-            "</div>"
-          : "") +
-        (worst
-          ? '<div class="small" style="margin-top:8px;"><strong>Worst hour:</strong> ' +
-            escHtml(formatTime(worst.dt)) + " - " +
-            "<strong>" + escHtml(worst.mph.toFixed(1)) + " mph</strong> wind, " +
-            "<strong>" + escHtml(worst.gust.toFixed(1)) + " mph</strong> gusts " +
-            escHtml(worst.dir || "") +
-            "</div>"
-          : "") +
-        "</div>";
-
-      // Chart card (speed line)
-      html +=
-        '<div class="card compact">' +
-        '<div class="small"><strong>Next 24 hours (mph)</strong></div>' +
+        '<div class="small"><strong>Hourly wind (mph) - ' + escHtml(chosenDate) + "</strong></div>" +
         '<div class="chartWrap" style="margin-top:8px;">' +
         '<canvas id="wind_chart" class="windChart"></canvas>' +
         "</div>" +
-        '<div class="small" style="margin-top:8px;">Line chart shows wind speed (not gust). Times are local.</div>' +
+        '<div class="small" style="margin-top:8px;">Times are local. If chart is blank, try another date.</div>' +
         "</div>";
 
-      // Hour list (first 12 points)
-      if (series && series.length) {
-        const n = Math.min(12, series.length);
-        html += '<div class="card compact"><div class="small"><strong>Next hours (wind / gust)</strong></div><div style="margin-top:8px;">';
-        for (let i = 0; i < n; i++) {
-          const p = series[i];
-          const r = computeWindRating(p.mph, p.gust, opts.bigWater, opts.motorized);
-          html +=
-            escHtml(formatTime(p.dt)) +
-            ": <strong>" + escHtml(p.mph.toFixed(1)) + " mph</strong> / " +
-            "<strong>" + escHtml(p.gust.toFixed(1)) + " gust</strong> " +
-            escHtml(p.dir || "") +
-            " <span class='small' style='opacity:0.85;'>(" + escHtml(r) + ")</span>" +
-            "<br>";
-        }
-        html += "</div></div>";
-      }
+      html +=
+        '<div class="card compact">' +
+        '<div class="small"><strong>First 24 hours listed</strong></div>' +
+        '<div style="margin-top:8px;">' +
+        (list.length ? list.join("<br>") : "No hourly wind returned for this date.") +
+        "</div></div>";
 
-      out.innerHTML = html || "No wind data returned.";
+      out.innerHTML = html;
 
-      // Draw chart after HTML is in the DOM
       const c = document.getElementById("wind_chart");
       if (c && series && series.length >= 2) {
         drawWindLineChart(c, series);
@@ -1223,15 +1183,26 @@ function renderWindPage() {
             if (c2) drawWindLineChart(c2, series);
           }, 120);
         });
+      } else {
+        // If not enough points, write a small hint inside the canvas container area
+        const wrap = document.querySelector(".chartWrap");
+        if (wrap) {
+          wrap.insertAdjacentHTML(
+            "beforeend",
+            '<div class="small" style="margin-top:8px;">Not enough hourly points for a chart on this date.</div>'
+          );
+        }
       }
     } catch (e) {
       out.textContent = "Could not load wind. Try again.";
     }
   }
+
+  autoDisplayWinds();
 }
-// ----------------------------
-// Trolling depth calculator
-// ----------------------------
+
+// -------- END OF FIRST HALF --------
+// Next chunk starts at: renderTrollingDepthPage() and continues to boot().
 function renderTrollingDepthPage() {
   const page = pageEl();
   page.innerHTML = `
@@ -1294,9 +1265,11 @@ function renderTrollingDepthPage() {
   `;
 
   function trollingDepth(speedMph, weightOz, lineOutFt, lineType, lineTestLb) {
-    if (speedMph <= 0 || weightOz <= 0 || lineOutFt <= 0 || lineTestLb <= 0) return null;
+    if (speedMph <= 0 || weightOz <= 0 || lineOutFt <= 0 || lineTestLb <= 0)
+      return null;
 
-    const typeDrag = ({ Braid: 1.0, Fluorocarbon: 1.12, Monofilament: 1.2 }[lineType] || 1.0);
+    const typeDrag =
+      { Braid: 1.0, Fluorocarbon: 1.12, Monofilament: 1.2 }[lineType] || 1.0;
     const testRatio = lineTestLb / 20.0;
     const testDrag = Math.pow(testRatio, 0.35);
     const totalDrag = typeDrag * testDrag;
@@ -1305,7 +1278,6 @@ function renderTrollingDepthPage() {
       0.135 *
       (weightOz / (totalDrag * Math.pow(speedMph, 1.35))) *
       lineOutFt;
-
     return Math.round(depth * 10) / 10;
   }
 
@@ -1331,20 +1303,30 @@ function renderTrollingDepthPage() {
   });
 }
 
-// ----------------------------
-// Species tips DB
-// ----------------------------
 function speciesDb() {
   return {
     Kokanee: {
       temp: "42 to 55 F",
-      baits: ["Small hoochies", "Small spinners (wedding ring)", "Corn with scent (where used)"],
+      baits: [
+        "Small hoochies",
+        "Small spinners (wedding ring)",
+        "Corn with scent (where used)"
+      ],
       rigs: ["Dodger + leader + hoochie/spinner", "Weights or downrigger to match marks"],
-      Mid: ["Troll dodger plus small hoochie or spinner behind it.", "Run scent and tune speed until you get a steady rod thump."]
+      Mid: [
+        "Troll dodger plus small hoochie or spinner behind it.",
+        "Run scent and tune speed until you get a steady rod thump."
+      ]
     },
     "Rainbow trout": {
       temp: "45 to 65 F",
-      baits: ["Small spoons", "Inline spinners", "Floating minnows", "Worms (where legal)", "PowerBait (where legal)"],
+      baits: [
+        "Small spoons",
+        "Inline spinners",
+        "Floating minnows",
+        "Worms (where legal)",
+        "PowerBait (where legal)"
+      ],
       rigs: ["Cast and retrieve", "Trolling with long leads", "Slip sinker bait rig (near bottom)"],
       Top: ["When they are up, cast small spinners, spoons, or floating minnows."],
       Mid: ["Troll small spoons or spinners at 1.2 to 1.8 mph."],
@@ -1366,7 +1348,15 @@ function speciesDb() {
     },
     "Smallmouth bass": {
       temp: "60 to 75 F",
-      baits: ["Walking baits", "Poppers", "Jerkbaits", "Swimbaits", "Ned rigs", "Tubes", "Drop shot plastics"],
+      baits: [
+        "Walking baits",
+        "Poppers",
+        "Jerkbaits",
+        "Swimbaits",
+        "Ned rigs",
+        "Tubes",
+        "Drop shot plastics"
+      ],
       rigs: ["Ned rig", "Drop shot", "Tube jig"],
       Top: ["Walking baits and poppers early and late."],
       Mid: ["Jerkbaits and swimbaits around rocks and shade."],
@@ -1382,8 +1372,17 @@ function speciesDb() {
     },
     Walleye: {
       temp: "55 to 70 F",
-      baits: ["Crankbaits (trolling)", "Jigs with soft plastics", "Jigs with crawler (where used)", "Blade baits"],
-      rigs: ["Jig and soft plastic", "Bottom bouncer + harness (where used)", "Trolling crankbaits on breaks"],
+      baits: [
+        "Crankbaits (trolling)",
+        "Jigs with soft plastics",
+        "Jigs with crawler (where used)",
+        "Blade baits"
+      ],
+      rigs: [
+        "Jig and soft plastic",
+        "Bottom bouncer + harness (where used)",
+        "Trolling crankbaits on breaks"
+      ],
       Mid: ["Troll crankbaits along breaks at dusk and dawn."],
       Bottom: ["Jig near bottom on transitions and edges."]
     },
@@ -1405,14 +1404,13 @@ function speciesDb() {
       temp: "65 to 85 F",
       baits: ["Cut bait", "Worms", "Stink bait", "Chicken liver (where used)"],
       rigs: ["Slip sinker / Carolina rig", "Santee Cooper style (float bait slightly)"],
-      Bottom: ["Soak bait on scent trails. Target holes, outside bends, slow water near current."]
+      Bottom: [
+        "Soak bait on scent trails. Target holes, outside bends, slow water near current."
+      ]
     }
   };
 }
 
-// ----------------------------
-// Species tips page
-// ----------------------------
 function renderSpeciesTipsPage() {
   const page = pageEl();
   const db = speciesDb();
@@ -1437,7 +1435,13 @@ function renderSpeciesTipsPage() {
   const sel = document.getElementById("sp_sel");
   sel.innerHTML = speciesList
     .map(function (s) {
-      return "<option" + (s === defaultSpecies ? " selected" : "") + ">" + escHtml(s) + "</option>";
+      return (
+        "<option" +
+        (s === defaultSpecies ? " selected" : "") +
+        ">" +
+        escHtml(s) +
+        "</option>"
+      );
     })
     .join("");
 
@@ -1456,33 +1460,53 @@ function renderSpeciesTipsPage() {
     if (info.baits && info.baits.length) {
       html +=
         '<div class="card compact"><div class="small"><strong>Popular baits</strong></div><ul class="list">' +
-        info.baits.map(function (x) { return "<li>" + escHtml(x) + "</li>"; }).join("") +
+        info.baits
+          .map(function (x) {
+            return "<li>" + escHtml(x) + "</li>";
+          })
+          .join("") +
         "</ul></div>";
     }
 
     if (info.rigs && info.rigs.length) {
       html +=
         '<div class="card compact"><div class="small"><strong>Common rigs</strong></div><ul class="list">' +
-        info.rigs.map(function (x) { return "<li>" + escHtml(x) + "</li>"; }).join("") +
+        info.rigs
+          .map(function (x) {
+            return "<li>" + escHtml(x) + "</li>";
+          })
+          .join("") +
         "</ul></div>";
     }
 
     if (info.Top && info.Top.length) {
       html +=
         '<div class="card compact"><div class="small"><strong>Topwater</strong></div><ul class="list">' +
-        info.Top.map(function (x) { return "<li>" + escHtml(x) + "</li>"; }).join("") +
+        info.Top
+          .map(function (x) {
+            return "<li>" + escHtml(x) + "</li>";
+          })
+          .join("") +
         "</ul></div>";
     }
     if (info.Mid && info.Mid.length) {
       html +=
         '<div class="card compact"><div class="small"><strong>Mid water</strong></div><ul class="list">' +
-        info.Mid.map(function (x) { return "<li>" + escHtml(x) + "</li>"; }).join("") +
+        info.Mid
+          .map(function (x) {
+            return "<li>" + escHtml(x) + "</li>";
+          })
+          .join("") +
         "</ul></div>";
     }
     if (info.Bottom && info.Bottom.length) {
       html +=
         '<div class="card compact"><div class="small"><strong>Bottom</strong></div><ul class="list">' +
-        info.Bottom.map(function (x) { return "<li>" + escHtml(x) + "</li>"; }).join("") +
+        info.Bottom
+          .map(function (x) {
+            return "<li>" + escHtml(x) + "</li>";
+          })
+          .join("") +
         "</ul></div>";
     }
 
@@ -1496,9 +1520,6 @@ function renderSpeciesTipsPage() {
   });
 }
 
-// ----------------------------
-// Speedometer page
-// ----------------------------
 function renderSpeedometerPage() {
   const page = pageEl();
   page.innerHTML = `
@@ -1587,6 +1608,10 @@ function boot() {
     state.lon = last.lon;
     state.placeLabel = last.label || "";
   }
+
+  // Default dates on first load (avoid empty date inputs)
+  if (!isIsoDate(state.timesDate)) state.timesDate = isoTodayLocal();
+  if (!isIsoDate(state.windDate)) state.windDate = isoTodayLocal();
 
   renderConsentBannerIfNeeded();
   render();

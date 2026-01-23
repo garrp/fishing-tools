@@ -1,6 +1,6 @@
 // app.js
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.0.3
+// Version 1.0.4
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 
 "use strict";
@@ -19,11 +19,11 @@
   - Reverse geocodes GPS lat/lon to a nearest city label when possible.
   - On mobile: header stacks, nav is a clean 2-column grid.
   - Best Times auto-displays as soon as a location is acquired (GPS or place selection).
-  - Wind page shows per-hour GO / CAUTION / NO GO using wind + gust thresholds.
+  - Wind page shows a clean wind list, plus ONE big GO/CAUTION/NO GO circle below it (no per-line ratings).
   - GA4 loads ONLY after user accepts the consent banner.
 */
 
-const APP_VERSION = "1.0.3";
+const APP_VERSION = "1.0.4";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -243,21 +243,6 @@ const app = document.getElementById("app");
   .dangerBtn { background:#f4a3a3 !important; border-color:#e48f8f !important; color:#3b0a0a !important; }
   .dangerBtn:hover { background:#ee8f8f !important; }
 
-  .pill {
-    display:inline-block;
-    padding: 4px 10px;
-    border-radius: 999px;
-    font-weight: 900;
-    font-size: 12px;
-    border: 1px solid rgba(0,0,0,0.16);
-    margin-left: 8px;
-    line-height: 16px;
-    white-space: nowrap;
-  }
-  .pillGo { background:#8fd19e; color:#0b2e13; border-color:#6fbf87; }
-  .pillCaution { background:#f1c40f; color:#3b2a00; border-color:#d4aa00; }
-  .pillNoGo { background:#e74c3c; color:#fff; border-color:#c0392b; }
-
   .chkRow {
     display:flex;
     align-items:center;
@@ -266,6 +251,31 @@ const app = document.getElementById("app");
   }
   .chkRow input { width:auto; }
   .chkRow label { font-weight:900; }
+
+  /* Big status circle (like original app) */
+  .statusWrap {
+    width:100%;
+    display:flex;
+    justify-content:center;
+    margin-top: 12px;
+  }
+  .statusCircle {
+    width: min(78vw, 340px);
+    height: min(78vw, 340px);
+    border-radius: 9999px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.22);
+    border: 1px solid rgba(0,0,0,0.12);
+  }
+  .statusText {
+    font-size: clamp(44px, 9.5vw, 90px);
+    font-weight: 900;
+    letter-spacing: 1px;
+    color: #0b0f12;
+    text-transform: uppercase;
+  }
 
   /* Consent banner */
   .consentBar {
@@ -417,10 +427,8 @@ function computeWindRating(speedMph, gustMph, bigWater) {
   return "GO";
 }
 
-function ratingPillHtml(rating) {
-  if (rating === "GO") return '<span class="pill pillGo">GO</span>';
-  if (rating === "CAUTION") return '<span class="pill pillCaution">CAUTION</span>';
-  return '<span class="pill pillNoGo">NO GO</span>';
+function circleFill(status) {
+  return { GO: "#2ecc71", CAUTION: "#f1c40f", "NO GO": "#e74c3c" }[status] || "#f1c40f";
 }
 
 // ----------------------------
@@ -576,7 +584,8 @@ function splitCurrentFutureWind(times, speeds, gusts, dirs) {
       mph: mph.toFixed(1),
       gust: gst.toFixed(1),
       dir: degToCompass(dirDeg),
-      rating: computeWindRating(mph, gst, state.bigWater)
+      rating: computeWindRating(mph, gst, state.bigWater),
+      score: mph + gst
     };
 
     if (dt <= now) current.push(item);
@@ -933,7 +942,7 @@ function renderWindPage() {
   page.innerHTML =
     '<div class="card">' +
     "  <h2>Wind Forecast</h2>" +
-    '  <div class="small">Hourly winds with GO / CAUTION / NO GO based on wind + gusts.</div>' +
+    '  <div class="small">Hourly winds. A single GO / CAUTION / NO GO circle is shown below the wind table.</div>' +
     "</div>";
 
   renderLocationPicker(page, "wind");
@@ -952,6 +961,7 @@ function renderWindPage() {
       </div>
 
       <div id="wind_out" style="margin-top:10px;"></div>
+      <div id="wind_status_circle"></div>
     </div>
   `
   );
@@ -959,7 +969,7 @@ function renderWindPage() {
   document.getElementById("big_water_chk").addEventListener("change", function (e) {
     state.bigWater = !!e.target.checked;
 
-    // If winds are already displayed, re-render rating pills immediately
+    // If winds are already displayed, re-run to refresh circle rating
     const out = document.getElementById("wind_out");
     const hasAny = out && out.innerHTML && out.innerHTML.indexOf("mph") !== -1;
     if (hasAny) {
@@ -969,7 +979,9 @@ function renderWindPage() {
 
   document.getElementById("wind_go").addEventListener("click", async function () {
     const out = document.getElementById("wind_out");
+    const circle = document.getElementById("wind_status_circle");
     out.innerHTML = "";
+    circle.innerHTML = "";
 
     if (!hasResolvedLocation()) {
       out.textContent = "Pick a place or use your location first.";
@@ -985,6 +997,7 @@ function renderWindPage() {
         ? state.placeLabel
         : "Lat " + state.lat.toFixed(4) + ", Lon " + state.lon.toFixed(4);
 
+      // Build clean wind "table" (no rating text per line)
       let html = "";
       html +=
         '<div class="small" style="margin-bottom:8px;"><strong>Using:</strong> ' +
@@ -992,10 +1005,13 @@ function renderWindPage() {
         (state.bigWater ? " (big water)" : "") +
         "</div>";
 
-      if (parts.current.length) {
-        html +=
-          '<div class="card compact"><div class="small"><strong>Current winds</strong></div><div style="margin-top:8px;">';
-        html += parts.current
+      function renderGroup(title, list) {
+        if (!list.length) return "";
+        let block =
+          '<div class="card compact"><div class="small"><strong>' +
+          escHtml(title) +
+          "</strong></div><div style=\"margin-top:8px;\">";
+        block += list
           .map(function (x) {
             return (
               escHtml(x.label) +
@@ -1004,41 +1020,55 @@ function renderWindPage() {
               " mph</strong> (gust " +
               escHtml(x.gust) +
               " mph) " +
-              escHtml(x.dir) +
-              " " +
-              ratingPillHtml(x.rating)
+              escHtml(x.dir)
             );
           })
           .join("<br>");
-        html += "</div></div>";
+        block += "</div></div>";
+        return block;
       }
 
-      if (parts.future.length) {
-        html +=
-          '<div class="card compact"><div class="small"><strong>Future winds</strong></div><div style="margin-top:8px;">';
-        html += parts.future
-          .map(function (x) {
-            return (
-              escHtml(x.label) +
-              ": <strong>" +
-              escHtml(x.mph) +
-              " mph</strong> (gust " +
-              escHtml(x.gust) +
-              " mph) " +
-              escHtml(x.dir) +
-              " " +
-              ratingPillHtml(x.rating)
-            );
-          })
-          .join("<br>");
-        html += "</div></div>";
-      }
+      html += renderGroup("Current winds", parts.current);
+      html += renderGroup("Future winds", parts.future);
 
       if (!parts.current.length && !parts.future.length) {
-        html += "No wind data returned.";
+        out.innerHTML = html + "No wind data returned.";
+        return;
       }
 
       out.innerHTML = html;
+
+      // Determine ONE overall status based on worst hour (wind+gust) across shown hours
+      const shown = parts.current.concat(parts.future);
+      let worst = null;
+      for (let i = 0; i < shown.length; i++) {
+        if (!worst || shown[i].score > worst.score) worst = shown[i];
+      }
+
+      const overall = worst ? computeWindRating(Number(worst.mph), Number(worst.gust), state.bigWater) : "CAUTION";
+      const fill = circleFill(overall);
+
+      // Big circle BELOW the wind table (inside same card, but after wind_out)
+      circle.innerHTML =
+        '<div class="statusWrap">' +
+        '  <div class="statusCircle" style="background:' +
+        escHtml(fill) +
+        ';">' +
+        '    <div class="statusText">' +
+        escHtml(overall) +
+        "</div>" +
+        "  </div>" +
+        "</div>" +
+        (worst
+          ? '<div class="small" style="text-align:center; margin-top:8px; opacity:0.85;">Worst shown hour: ' +
+            escHtml(worst.label) +
+            " (" +
+            escHtml(worst.mph) +
+            " mph wind, " +
+            escHtml(worst.gust) +
+            " mph gust)" +
+            "</div>"
+          : "");
     } catch (e) {
       out.textContent = "Could not load wind. Try again.";
     }

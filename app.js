@@ -1,7 +1,7 @@
 // ============================
 // app.js (PART 1 OF 3) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.1.0
+// Version 1.1.1
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -19,17 +19,15 @@
   - Uses Open-Meteo Geocoding for place search.
   - Uses browser geolocation for "Use my location".
   - Location is saved to localStorage and restored on next visit.
-  - Home shows TODAY ONLY (no forecast range text).
-  - Home inputs are stacked (mobile-first).
+  - Home date picker now drives which forecast day is shown (within 7-day forecast).
   - Water type is a toggle (Small default, Big stricter).
   - GA4 loads ONLY after user accepts the consent banner.
   - Saved location auto-clears if user edits the location input.
   - Place input normalizes "City, st" (state casing ignored).
   - FIX: Robust fetch w/ timeout + better error handling for Open-Meteo (prevents silent JSON parse failures).
-  - NEW: Auto-request GPS on app open; if allowed, refreshes Home data automatically.
 */
 
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.1";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -191,12 +189,21 @@ const state = {
   selectedIndex: 0,
   speedWatchId: null,
 
-  // Today-only Home uses this (YYYY-MM-DD)
+  // Home uses this (YYYY-MM-DD). Default to today but user can change.
   dateIso: "",
 
   // Options for go/caution/no-go
   waterType: "Small / protected",
-  craft: "Kayak (paddle)"
+  craft: "Kayak (paddle)",
+
+  // Cache for forecasts so changing date does not refetch every time
+  cache: {
+    wx: null,
+    sun: null,
+    cacheLat: null,
+    cacheLon: null,
+    cachedAtMs: 0
+  }
 };
 
 // ----------------------------
@@ -325,7 +332,8 @@ let app = null;
     color: rgba(0,0,0,0.78);
     font-weight: 900;
   }
-  .toggleBtnOn {
+  /* NOTE: existing markup uses toggleActive on buttons */
+  .toggleBtn.toggleActive {
     background: rgba(143,209,158,0.45);
     border-color: rgba(111,191,135,0.85);
     color: rgba(0,0,0,0.82);
@@ -456,6 +464,13 @@ function setResolvedLocation(lat, lon, label) {
   state.lon = Number(lon);
   state.placeLabel = String(label || "");
   saveLastLocation(state.lat, state.lon, state.placeLabel);
+
+  // invalidate forecast cache when location changes
+  state.cache.wx = null;
+  state.cache.sun = null;
+  state.cache.cacheLat = state.lat;
+  state.cache.cacheLon = state.lon;
+  state.cache.cachedAtMs = 0;
 }
 
 function clearResolvedLocation() {
@@ -465,6 +480,12 @@ function clearResolvedLocation() {
   state.matches = [];
   state.selectedIndex = 0;
   clearLastLocation();
+
+  state.cache.wx = null;
+  state.cache.sun = null;
+  state.cache.cacheLat = null;
+  state.cache.cacheLon = null;
+  state.cache.cachedAtMs = 0;
 }
 
 function isoTodayLocal() {
@@ -525,47 +546,6 @@ function stopSpeedWatchIfRunning() {
 }
 
 // ----------------------------
-// Auto-resolve location on app open
-// - Triggers browser permission prompt (as requested)
-// - If allowed: sets lat/lon and refreshes UI/data
-// - If denied/unavailable: falls back to last saved location (already supported)
-// ----------------------------
-function autoResolveLocationOnOpen() {
-  if (!navigator.geolocation) return;
-
-  // If we already have a resolved location (or restored last), don't prompt again.
-  if (hasResolvedLocation()) return;
-
-  try {
-    navigator.geolocation.getCurrentPosition(
-      function (pos) {
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
-
-        // Set immediately so app can load data right away
-        setResolvedLocation(lat, lon, "Current location");
-
-        // Re-render so Home will refresh with the new location
-        render();
-
-        // Then try to name it (nearest city) and re-render again for the label
-        reverseGeocode(lat, lon).then(function (label) {
-          if (label) setResolvedLocation(lat, lon, label);
-          render();
-        });
-      },
-      function (_err) {
-        // User denied or it failed - do nothing.
-        // Your existing "loadLastLocation()" fallback in render() still applies.
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 500 }
-    );
-  } catch (e) {
-    // ignore
-  }
-}
-
-// ----------------------------
 // Robust fetch helpers (FIX for "Could not load data")
 // - Adds timeout (mobile networks can hang)
 // - Handles non-JSON responses (CDN errors, 429, 5xx) without crashing
@@ -588,7 +568,6 @@ async function fetchJson(url, timeoutMs) {
     try {
       data = JSON.parse(text);
     } catch (e) {
-      // Not JSON - throw a readable error
       const snippet = String(text || "")
         .slice(0, 160)
         .replace(/\s+/g, " ")
@@ -621,7 +600,6 @@ async function fetchJson(url, timeoutMs) {
   }
 }
 
-// Build a short error string for the UI (do not dump huge text)
 function niceErr(e) {
   const s = String(e && e.message ? e.message : e);
   return s.length > 180 ? s.slice(0, 180) + "..." : s;
@@ -722,8 +700,7 @@ function sunForDate(sunData, dateIso) {
   const idx = sunData.days.indexOf(dateIso);
   if (idx < 0) return null;
 
-  const sr =
-    sunData.sunrise && sunData.sunrise[idx] ? sunData.sunrise[idx] : null;
+  const sr = sunData.sunrise && sunData.sunrise[idx] ? sunData.sunrise[idx] : null;
   const ss = sunData.sunset && sunData.sunset[idx] ? sunData.sunset[idx] : null;
   if (!sr || !ss) return null;
 
@@ -773,6 +750,44 @@ async function fetchWeatherWindMulti(lat, lon) {
       wind: hourly.wind_speed_10m || []
     }
   };
+}
+
+// ----------------------------
+// Forecast cache helpers
+// - Keeps Home responsive when date changes
+// - Refreshes when:
+//   - no cache
+//   - location changes
+//   - cache age exceeds TTL
+// ----------------------------
+const FORECAST_TTL_MS = 12 * 60 * 1000; // 12 minutes
+
+function cacheValidFor(lat, lon) {
+  if (!state.cache.wx || !state.cache.sun) return false;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+  if (state.cache.cacheLat !== Number(lat) || state.cache.cacheLon !== Number(lon)) return false;
+  const age = Date.now() - safeNum(state.cache.cachedAtMs, 0);
+  return age >= 0 && age <= FORECAST_TTL_MS;
+}
+
+async function getForecastBundle(lat, lon) {
+  const la = Number(lat);
+  const lo = Number(lon);
+
+  if (cacheValidFor(la, lo)) {
+    return { wx: state.cache.wx, sun: state.cache.sun, fromCache: true };
+  }
+
+  const wx = await fetchWeatherWindMulti(la, lo);
+  const sun = await fetchSunTimesMulti(la, lo);
+
+  state.cache.wx = wx;
+  state.cache.sun = sun;
+  state.cache.cacheLat = la;
+  state.cache.cacheLon = lo;
+  state.cache.cachedAtMs = Date.now();
+
+  return { wx: wx, sun: sun, fromCache: false };
 }
 
 // ----------------------------
@@ -831,6 +846,7 @@ function drawWindLineChart(canvas, points) {
     return padT + (1 - t) * h;
   }
 
+  // grid
   ctx.strokeStyle = "rgba(0,0,0,0.10)";
   ctx.lineWidth = 1;
   for (let g = 0; g <= 2; g++) {
@@ -841,6 +857,7 @@ function drawWindLineChart(canvas, points) {
     ctx.stroke();
   }
 
+  // labels
   ctx.fillStyle = "rgba(0,0,0,0.70)";
   ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
   const yTop = maxV;
@@ -851,6 +868,7 @@ function drawWindLineChart(canvas, points) {
   ctx.fillText(String(Math.round(yMid)) + " mph", 6, padT + h / 2 + 4);
   ctx.fillText(String(Math.round(yBot)) + " mph", 6, padT + h + 4);
 
+  // line
   ctx.strokeStyle = "rgba(7,27,31,0.75)";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -860,6 +878,7 @@ function drawWindLineChart(canvas, points) {
   }
   ctx.stroke();
 
+  // points
   ctx.fillStyle = "rgba(7,27,31,0.70)";
   for (let d = 0; d < points.length; d++) {
     const xx = xFor(d);
@@ -964,8 +983,12 @@ function pageEl() {
 // UI: Location Picker (reusable)
 // - NO clear saved location button
 // - auto-clears saved location if user edits the box
+// - OPTIONAL autoGPS: attempts geolocation on render (no prompt loops)
 // ----------------------------
-function renderLocationPicker(container, placeKey, onResolved) {
+function renderLocationPicker(container, placeKey, onResolved, opts) {
+  const options = opts || {};
+  const autoGPS = options.autoGPS === true;
+
   appendHtml(
     container,
     `
@@ -1031,7 +1054,7 @@ function renderLocationPicker(container, placeKey, onResolved) {
     }
   });
 
-  document.getElementById(placeKey + "_gps").addEventListener("click", function () {
+  async function doGpsOnce() {
     if (!navigator.geolocation) {
       usingEl.textContent = "Geolocation not supported on this device/browser.";
       return;
@@ -1074,6 +1097,10 @@ function renderLocationPicker(container, placeKey, onResolved) {
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 500 }
     );
+  }
+
+  document.getElementById(placeKey + "_gps").addEventListener("click", function () {
+    doGpsOnce();
   });
 
   document.getElementById(placeKey + "_search").addEventListener("click", async function () {
@@ -1128,6 +1155,16 @@ function renderLocationPicker(container, placeKey, onResolved) {
 
     usingEl.textContent = "";
   });
+
+  // Auto-run GPS on open:
+  // - only if no resolved location exists AND no saved location will be restored later
+  // - browser will handle permission UI
+  if (autoGPS && !hasResolvedLocation()) {
+    // small delay so the UI paints first
+    setTimeout(function () {
+      if (!hasResolvedLocation()) doGpsOnce();
+    }, 250);
+  }
 }
 
 // ============================
@@ -1295,7 +1332,9 @@ function computeExposureTips(inputs) {
 }
 
 // ----------------------------
-// Home: Today only + stacked inputs + water toggle
+// Home: Date-driven forecast (within 7 days)
+// - Changing the date updates tiles, wind chart, and best windows for that day.
+// - Uses cached 7-day forecast bundle; refetches on TTL or location change.
 // ----------------------------
 function renderHome() {
   const page = pageEl();
@@ -1305,11 +1344,12 @@ function renderHome() {
     `
     <div class="card">
       <h2>Weather/Wind + Best Times</h2>
-      <div class="small muted">Today only. Set location and the app builds tiles, wind chart, and fishing windows.</div>
+      <div class="small muted">Pick a date (within 7-day forecast), set location, and the app builds tiles, wind chart, and fishing windows.</div>
 
       <div style="margin-top:12px;">
-        <div class="fieldLabel">Today</div>
+        <div class="fieldLabel">Date</div>
         <input id="home_date" type="date" />
+        <div class="small muted" style="margin-top:6px;">Shows forecasted values for the selected date (Open-Meteo 7-day forecast).</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -1318,7 +1358,6 @@ function renderHome() {
           <button type="button" id="water_small" class="toggleBtn">Small / protected</button>
           <button type="button" id="water_big" class="toggleBtn">Big water / offshore</button>
         </div>
-        <div class="small muted" style="margin-top:8px;">Small water is default. Big water is stricter for wind and cold.</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -1338,16 +1377,9 @@ function renderHome() {
   const btnSmall = document.getElementById("water_small");
   const btnBig = document.getElementById("water_big");
 
-  // Today only
-  state.dateIso = isoTodayLocal();
+  // Default date if not already set
+  if (!isIsoDate(state.dateIso)) state.dateIso = isoTodayLocal();
   dateInput.value = state.dateIso;
-
-  // Prevent picking other days: snap back to today if changed
-  dateInput.addEventListener("change", function () {
-    state.dateIso = isoTodayLocal();
-    dateInput.value = state.dateIso;
-    renderHomeDynamic();
-  });
 
   craftSel.value = state.craft || "Kayak (paddle)";
 
@@ -1379,17 +1411,35 @@ function renderHome() {
     renderHomeDynamic();
   });
 
-  // Default small/protected
-  if (state.waterType !== "Big water / offshore") state.waterType = "Small / protected";
-  paintWaterToggle();
-
-  // Location picker
-  renderLocationPicker(page, "home", function () {
+  dateInput.addEventListener("change", function () {
+    const v = String(dateInput.value || "").trim();
+    if (isIsoDate(v)) {
+      state.dateIso = v;
+    } else {
+      state.dateIso = isoTodayLocal();
+      dateInput.value = state.dateIso;
+    }
     renderHomeDynamic();
   });
 
+  if (state.waterType !== "Big water / offshore") state.waterType = "Small / protected";
+  paintWaterToggle();
+
+  // Location picker:
+  // - if a saved last location exists, render() will restore it before this renders
+  // - if no saved/resolved location exists, this will attempt GPS automatically
+  renderLocationPicker(
+    page,
+    "home",
+    function () {
+      renderHomeDynamic();
+    },
+    { autoGPS: true }
+  );
+
   appendHtml(page, `<div id="home_dynamic"></div>`);
 
+  // initial draw
   renderHomeDynamic();
 
   async function renderHomeDynamic() {
@@ -1405,47 +1455,51 @@ function renderHome() {
       `
       <div class="card compact">
         <div><strong>Loading forecast...</strong></div>
-        <div class="small muted">Building tiles, wind chart, and best times for today.</div>
+        <div class="small muted">Building tiles, wind chart, and best times for the selected date.</div>
       </div>
     `
     );
 
-    let wx = null;
-    let sun = null;
-
+    let bundle = null;
     try {
-      wx = await fetchWeatherWindMulti(state.lat, state.lon);
-      sun = await fetchSunTimesMulti(state.lat, state.lon);
+      bundle = await getForecastBundle(state.lat, state.lon);
     } catch (e) {
       dyn.innerHTML =
-        '<div class="card"><strong>Could not load data.</strong><div class="small muted">If this keeps happening, it is usually blocked requests (mixed content) or network. Make sure your page is HTTPS and your script is not being cached old.</div></div>';
+        '<div class="card"><strong>Could not load data.</strong><div class="small muted">' +
+        escHtml(niceErr(e)) +
+        "</div></div>";
       return;
     }
 
-    const todayIso = isoTodayLocal();
-    state.dateIso = todayIso;
-    dateInput.value = todayIso;
+    const wx = bundle.wx;
+    const sun = bundle.sun;
 
     const dailyDates = wx && wx.daily && wx.daily.time ? wx.daily.time : [];
-    const idx = dailyDates.indexOf(todayIso);
-
-    // If local "today" is not in forecast list (timezone edge), fall back to first daily day
-    const useIdx = idx >= 0 ? idx : 0;
-    const useIso = dailyDates && dailyDates.length ? dailyDates[useIdx] : todayIso;
-    state.dateIso = useIso;
-    dateInput.value = useIso;
-
     if (!dailyDates.length) {
       dyn.innerHTML =
         '<div class="card"><strong>No forecast returned.</strong><div class="small muted">Try again in a moment.</div></div>';
       return;
     }
 
-    const tmin = safeNum(wx.daily.tmin[useIdx], 0);
-    const tmax = safeNum(wx.daily.tmax[useIdx], 0);
-    const popMax = safeNum(wx.daily.popMax[useIdx], 0);
-    const windMax = safeNum(wx.daily.windMax[useIdx], 0);
-    const gustMax = safeNum(wx.daily.gustMax[useIdx], 0);
+    // Use selected date if it exists in the 7-day list, else fall back to closest available (first).
+    const wantIso = isIsoDate(state.dateIso) ? state.dateIso : isoTodayLocal();
+    let idx = dailyDates.indexOf(wantIso);
+
+    // If user picks outside range, snap to first available.
+    if (idx < 0) {
+      idx = 0;
+      state.dateIso = dailyDates[0];
+      const di = document.getElementById("home_date");
+      if (di) di.value = state.dateIso;
+    }
+
+    const useIso = dailyDates[idx];
+
+    const tmin = safeNum(wx.daily.tmin[idx], 0);
+    const tmax = safeNum(wx.daily.tmax[idx], 0);
+    const popMax = safeNum(wx.daily.popMax[idx], 0);
+    const windMax = safeNum(wx.daily.windMax[idx], 0);
+    const gustMax = safeNum(wx.daily.gustMax[idx], 0);
 
     const sunFor = sunForDate(sun, useIso);
     const windows = sunFor ? computeBestFishingWindows(sunFor.sunrise, sunFor.sunset) : [];
@@ -1466,6 +1520,7 @@ function renderHome() {
       gustMax: gustMax
     });
 
+    // hourly points for selected date
     const pointsRaw = filterHourlyToDate(wx.hourly.time || [], wx.hourly.wind || [], useIso);
     const points = [];
     for (let i = 0; i < pointsRaw.length; i++) {
@@ -1484,6 +1539,7 @@ function renderHome() {
       `
       <div class="card">
         <h3>Overview - ${escHtml(useIso)}</h3>
+        <div class="small muted" style="margin-top:4px;">${bundle.fromCache ? "Using cached forecast bundle." : "Fresh forecast bundle."}</div>
 
         <div class="tilesGrid">
           <div class="tile">
@@ -1542,7 +1598,7 @@ function renderHome() {
       `
       <div class="card">
         <h3>Hourly wind (line chart)</h3>
-        <div class="small muted">Today only. Wind speed at 10m in mph.</div>
+        <div class="small muted">Wind speed at 10m in mph for the selected date.</div>
         <div class="chartWrap">
           <canvas id="wind_canvas" class="windChart"></canvas>
         </div>
@@ -1566,7 +1622,7 @@ function renderHome() {
             );
           })
           .join("")
-      : "<li>No sunrise/sunset data for today.</li>";
+      : "<li>No sunrise/sunset data for that date.</li>";
 
     appendHtml(
       dyn,
@@ -1589,6 +1645,7 @@ function renderHome() {
     `
     );
 
+    // Re-render chart on resize for current selected day
     let resizeTimer = null;
     window.addEventListener("resize", function () {
       if (!document.getElementById("wind_canvas")) return;
@@ -1927,6 +1984,7 @@ function render() {
 
   renderConsentBannerIfNeeded();
 
+  // Restore saved last location (preferred) before attempting auto GPS on Home
   if (!hasResolvedLocation()) {
     const last = loadLastLocation();
     if (last) setResolvedLocation(last.lat, last.lon, last.label || "");
@@ -1954,16 +2012,13 @@ document.addEventListener("DOMContentLoaded", function () {
   app = document.getElementById("app");
 
   state.tool = "Home";
-  state.dateIso = isoTodayLocal();
+  if (!isIsoDate(state.dateIso)) state.dateIso = isoTodayLocal();
 
   try {
     window.scrollTo(0, 0);
   } catch (e) {
     // ignore
   }
-
-  // NEW: auto-request GPS on app open, then refresh data if allowed
-  autoResolveLocationOnOpen();
 
   render();
 });

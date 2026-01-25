@@ -1,7 +1,7 @@
 // ============================
-// app.js (PART 1 OF 3) BEGIN
+// app.js (PART 1 OF 4) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.1.1
+// Version 1.1.2
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -14,15 +14,15 @@
     <main id="app"></main>
     <script src="app.js" defer></script>
 
-  What changed vs your last:
-  - Date picker is now REAL (not forced back to today).
-  - Home renders forecast for the selected date (within Open-Meteo 7-day daily list).
-  - Precip tile shows "None" when probability is null/undefined.
-  - Adds a small forecast bundle cache + TTL to avoid refetch spam.
-  - Still does not change anything else you did not ask for.
+  Changes in this build:
+  - Depth calculator: adds Line type (Mono / Fluoro / Braid) and factors it into depth estimate.
+  - Home status message: replaces the plain message with 5 funny reasons per GO/CAUTION/NO-GO.
+    Deterministic pick (stable per date + location + craft + water) so it does not flicker.
+    Still appends cold warnings when needed.
+  - Fixes water toggle highlight bug (JS now uses the CSS class: toggleActive).
 */
 
-const APP_VERSION = "1.1.1";
+const APP_VERSION = "1.1.2";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -113,16 +113,20 @@ function renderConsentBannerIfNeeded() {
 
   document.body.appendChild(bar);
 
-  document.getElementById("consent_accept").addEventListener("click", function () {
-    setConsent("granted");
-    removeConsentBanner();
-    loadGa4();
-  });
+  document
+    .getElementById("consent_accept")
+    .addEventListener("click", function () {
+      setConsent("granted");
+      removeConsentBanner();
+      loadGa4();
+    });
 
-  document.getElementById("consent_decline").addEventListener("click", function () {
-    setConsent("denied");
-    removeConsentBanner();
-  });
+  document
+    .getElementById("consent_decline")
+    .addEventListener("click", function () {
+      setConsent("denied");
+      removeConsentBanner();
+    });
 }
 
 // ----------------------------
@@ -519,8 +523,13 @@ function stopSpeedWatchIfRunning() {
 // ----------------------------
 async function fetchJson(url, timeoutMs) {
   const ms = Number(timeoutMs || 12000);
-  const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const t = ctrl ? setTimeout(function () { ctrl.abort(); }, ms) : null;
+  const ctrl =
+    typeof AbortController !== "undefined" ? new AbortController() : null;
+  const t = ctrl
+    ? setTimeout(function () {
+        ctrl.abort();
+      }, ms)
+    : null;
 
   try {
     const r = await fetch(url, ctrl ? { signal: ctrl.signal } : undefined);
@@ -530,21 +539,32 @@ async function fetchJson(url, timeoutMs) {
     try {
       data = JSON.parse(text);
     } catch (e) {
-      const snippet = String(text || "").slice(0, 160).replace(/\s+/g, " ").trim();
-      throw new Error("Bad JSON response (" + r.status + "). " + (snippet ? snippet : "No body."));
+      const snippet = String(text || "")
+        .slice(0, 160)
+        .replace(/\s+/g, " ")
+        .trim();
+      throw new Error(
+        "Bad JSON response (" +
+          r.status +
+          "). " +
+          (snippet ? snippet : "No body.")
+      );
     }
 
     if (!r.ok) {
       const msg =
-        (data && (data.reason || data.error || data.message)) ?
-          String(data.reason || data.error || data.message) :
-          ("HTTP " + r.status);
+        data && (data.reason || data.error || data.message)
+          ? String(data.reason || data.error || data.message)
+          : "HTTP " + r.status;
       throw new Error(msg);
     }
 
     return data;
   } catch (e2) {
-    const msg = (e2 && e2.name === "AbortError") ? "Request timed out." : String(e2 && e2.message ? e2.message : e2);
+    const msg =
+      e2 && e2.name === "AbortError"
+        ? "Request timed out."
+        : String(e2 && e2.message ? e2.message : e2);
     throw new Error(msg);
   } finally {
     if (t) clearTimeout(t);
@@ -555,6 +575,16 @@ function niceErr(e) {
   const s = String(e && e.message ? e.message : e);
   return s.length > 180 ? s.slice(0, 180) + "..." : s;
 }
+
+// ============================
+// app.js (PART 1 OF 4) END
+// ============================
+// ============================
+// app.js (PART 2 OF 4) BEGIN
+// FishyNW.com - Fishing Tools (Web)
+// Version 1.1.2
+// ASCII ONLY. No Unicode. No smart quotes. No special dashes.
+// ============================
 
 // ----------------------------
 // API: Geocoding
@@ -581,7 +611,11 @@ async function geocodeSearch(query, count) {
         const admin1 = x.admin1 || "";
         const country = x.country || "";
         const parts = [name, admin1, country].filter(Boolean);
-        return { label: parts.join(", "), lat: Number(x.latitude), lon: Number(x.longitude) };
+        return {
+          label: parts.join(", "),
+          lat: Number(x.latitude),
+          lon: Number(x.longitude)
+        };
       })
       .filter(function (x) {
         return Number.isFinite(x.lat) && Number.isFinite(x.lon);
@@ -647,8 +681,10 @@ function sunForDate(sunData, dateIso) {
   const idx = sunData.days.indexOf(dateIso);
   if (idx < 0) return null;
 
-  const sr = sunData.sunrise && sunData.sunrise[idx] ? sunData.sunrise[idx] : null;
-  const ss = sunData.sunset && sunData.sunset[idx] ? sunData.sunset[idx] : null;
+  const sr =
+    sunData.sunrise && sunData.sunrise[idx] ? sunData.sunrise[idx] : null;
+  const ss =
+    sunData.sunset && sunData.sunset[idx] ? sunData.sunset[idx] : null;
   if (!sr || !ss) return null;
 
   return { sunrise: new Date(sr), sunset: new Date(ss) };
@@ -697,8 +733,8 @@ async function fetchWeatherWindMulti(lat, lon) {
 // - prevents refetching on every small UI change
 // ----------------------------
 const forecastCache = {
-  key: "",   // "lat,lon"
-  ts: 0,     // ms epoch
+  key: "", // "lat,lon"
+  ts: 0, // ms epoch
   wx: null,
   sun: null
 };
@@ -707,7 +743,9 @@ const forecastCache = {
 const FORECAST_TTL_MS = 10 * 60 * 1000;
 
 function cacheKey(lat, lon) {
-  return String(Number(lat).toFixed(4)) + "," + String(Number(lon).toFixed(4));
+  return (
+    String(Number(lat).toFixed(4)) + "," + String(Number(lon).toFixed(4))
+  );
 }
 
 async function getForecastBundle(lat, lon) {
@@ -718,7 +756,7 @@ async function getForecastBundle(lat, lon) {
     forecastCache.key === k &&
     forecastCache.wx &&
     forecastCache.sun &&
-    (now - forecastCache.ts) < FORECAST_TTL_MS
+    now - forecastCache.ts < FORECAST_TTL_MS
   ) {
     return { wx: forecastCache.wx, sun: forecastCache.sun, fromCache: true };
   }
@@ -762,7 +800,8 @@ function drawWindLineChart(canvas, points) {
 
   if (!points || points.length < 2 || w <= 10 || h <= 10) {
     ctx.fillStyle = "rgba(0,0,0,0.75)";
-    ctx.font = "13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+    ctx.font =
+      "13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
     ctx.fillText("Not enough data for chart.", 12, 22);
     return;
   }
@@ -801,13 +840,18 @@ function drawWindLineChart(canvas, points) {
   }
 
   ctx.fillStyle = "rgba(0,0,0,0.70)";
-  ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+  ctx.font =
+    "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
   const yTop = maxV;
   const yMid = (minV + maxV) / 2;
   const yBot = minV;
 
   ctx.fillText(String(Math.round(yTop)) + " mph", 6, padT + 12);
-  ctx.fillText(String(Math.round(yMid)) + " mph", 6, padT + h / 2 + 4);
+  ctx.fillText(
+    String(Math.round(yMid)) + " mph",
+    6,
+    padT + h / 2 + 4
+  );
   ctx.fillText(String(Math.round(yBot)) + " mph", 6, padT + h + 4);
 
   ctx.strokeStyle = "rgba(7,27,31,0.75)";
@@ -851,16 +895,6 @@ function drawWindLineChart(canvas, points) {
 
   ctx.textAlign = "left";
 }
-
-// ============================
-// app.js (PART 1 OF 3) END
-// ============================
-// ============================
-// app.js (PART 2 OF 3) BEGIN
-// FishyNW.com - Fishing Tools (Web)
-// Version 1.1.1
-// ASCII ONLY. No Unicode. No smart quotes. No special dashes.
-// ============================
 
 // ----------------------------
 // UI: Header + Nav
@@ -1081,17 +1115,23 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
 
     matchesEl.innerHTML =
       '<div class="small"><strong>Choose the correct match</strong></div>' +
-      '<select id="' + placeKey + '_select" style="margin-top:8px;">' +
+      '<select id="' +
+      placeKey +
+      '_select" style="margin-top:8px;">' +
       optionsHtml +
       "</select>" +
       '<div style="margin-top:10px;">' +
-      '<button id="' + placeKey + '_use" style="width:100%;">Use this place</button>' +
+      '<button id="' +
+      placeKey +
+      '_use" style="width:100%;">Use this place</button>' +
       "</div>" +
       '<div class="small muted" style="margin-top:8px;">Pick the correct match, then tap Use this place.</div>';
 
-    document.getElementById(placeKey + "_select").addEventListener("change", function (e) {
-      state.selectedIndex = Number(e.target.value);
-    });
+    document
+      .getElementById(placeKey + "_select")
+      .addEventListener("change", function (e) {
+        state.selectedIndex = Number(e.target.value);
+      });
 
     document.getElementById(placeKey + "_use").addEventListener("click", function () {
       const chosen = state.matches[state.selectedIndex];
@@ -1112,21 +1152,19 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
   // Only if requested AND no resolved location already exists.
   // This keeps your saved location behavior intact and avoids surprise prompting every load when saved location exists.
   if (autoGps && !hasResolvedLocation()) {
-    // small delay so UI draws before permission prompt
     setTimeout(function () {
-      // if saved location showed up (e.g., localStorage loaded after render), do nothing
       if (!hasResolvedLocation()) doGps();
     }, 450);
   }
 }
 
 // ============================
-// app.js (PART 2 OF 3) END
+// app.js (PART 2 OF 4) END
 // ============================
 // ============================
-// app.js (PART 3 OF 3) BEGIN
+// app.js (PART 3 OF 4) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.1.1
+// Version 1.1.2
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -1153,7 +1191,59 @@ function computeBestFishingWindows(sunrise, sunset) {
   return out;
 }
 
+// ----------------------------
+// Deterministic "random" (stable per date + location + settings)
+// so messages do not flicker every render
+// ----------------------------
+function hash32(str) {
+  // FNV-1a-ish small hash
+  const s = String(str || "");
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function pickFunnyReason(label, seedStr) {
+  const goReasons = [
+    "GO: The fish called. They said your schedule is now their schedule.",
+    "GO: The wind is behaving. That alone feels suspicious. Take advantage.",
+    "GO: Your lure box deserves sunlight and compliments today.",
+    "GO: Science demands you test if snacks taste better on the water (they do).",
+    "GO: Because staying home would allow your gear to win the staring contest."
+  ];
+
+  const cautionReasons = [
+    "CAUTION: The wind looks friendly, but it has trust issues. Keep a backup plan.",
+    "CAUTION: Mother Nature is in a mood. You can go, but do not argue with her.",
+    "CAUTION: This is a 'stay close to shore' kind of day. The fish will understand.",
+    "CAUTION: Conditions may try to humble you. Let them. Bring extra patience.",
+    "CAUTION: If your hat blows off, that is the universe telling you to reel in and reassess."
+  ];
+
+  const nogoReasons = [
+    "NO-GO: The forecast is basically yelling. Maybe listen this once.",
+    "NO-GO: Today is a great day to reorganize tackle and pretend it counts as cardio.",
+    "NO-GO: The wind wants your kayak. Do not donate it.",
+    "NO-GO: Even the seagulls are filing a complaint. Reschedule.",
+    "NO-GO: Conditions are spicy. You are not a burrito."
+  ];
+
+  const seed = hash32(seedStr);
+  const idx = seed % 5;
+
+  if (label === "GO") return goReasons[idx];
+  if (label === "CAUTION") return cautionReasons[idx];
+  return nogoReasons[idx];
+}
+
+// ----------------------------
 // GO/CAUTION/NO-GO
+// - now uses funny reason picker (5 each)
+// - still appends cold warnings when needed
+// ----------------------------
 function computeGoStatus(inputs) {
   const craft = inputs.craft || "Kayak (paddle)";
   const water = inputs.waterType || "Small / protected";
@@ -1236,17 +1326,27 @@ function computeGoStatus(inputs) {
 
   const needlePct = Math.max(0, Math.min(100, score));
 
-  let msg =
-    "Generally favorable. Watch for local funnels, open water chop, and changing conditions.";
-  if (label === "CAUTION") {
-    msg =
-      "Use caution. Expect changing wind and chop. Stay close to shore and keep an easy exit plan.";
-  }
-  if (label === "NO-GO") {
-    msg =
-      "Not recommended. Conditions are high risk for the selected craft/water type. Consider sheltered water or reschedule.";
-  }
+  // Deterministic seed so it stays the same for a given situation/date
+  const seedStr =
+    String(inputs.seed || "") +
+    "|" +
+    String(label) +
+    "|" +
+    String(craft) +
+    "|" +
+    String(water) +
+    "|" +
+    String(Math.round(windMax)) +
+    "|" +
+    String(Math.round(gustMax)) +
+    "|" +
+    String(Math.round(tmin)) +
+    "|" +
+    String(Math.round(tmax));
 
+  let msg = pickFunnyReason(label, seedStr);
+
+  // Still append serious cold warnings as needed (short, but clear)
   if (highF <= 30 && label !== "NO-GO") {
     msg += " Very cold air increases consequence. Dress for immersion, not just air temp.";
   }
@@ -1289,11 +1389,8 @@ function computeExposureTips(inputs) {
 
 // ----------------------------
 // Home: Date-driven forecast + water toggle + auto refresh
-// - Date picker actually drives which daily index is used
-// - Hourly chart filters to the selected day
-// - Precip tile shows "None" if missing (null/undefined/NaN)
-// - If selected date not in returned daily list, shows friendly message
-// - Auto GPS on load ONLY when no saved location exists (see Part 2)
+// - Uses getForecastBundle (cache + TTL) so it does not hammer the API
+// - Fixes water toggle highlight (toggleActive class)
 // ----------------------------
 function renderHome() {
   const page = pageEl();
@@ -1352,11 +1449,11 @@ function renderHome() {
   function paintWaterToggle() {
     const isBig = state.waterType === "Big water / offshore";
     if (isBig) {
-      btnBig.classList.add("toggleBtnOn");
-      btnSmall.classList.remove("toggleBtnOn");
+      btnBig.classList.add("toggleActive");
+      btnSmall.classList.remove("toggleActive");
     } else {
-      btnSmall.classList.add("toggleBtnOn");
-      btnBig.classList.remove("toggleBtnOn");
+      btnSmall.classList.add("toggleActive");
+      btnBig.classList.remove("toggleActive");
     }
   }
 
@@ -1382,9 +1479,14 @@ function renderHome() {
   paintWaterToggle();
 
   // Location picker (auto GPS only when no saved location exists)
-  renderLocationPicker(page, "home", function () {
-    renderHomeDynamic("location_resolved");
-  }, { autoGps: true });
+  renderLocationPicker(
+    page,
+    "home",
+    function () {
+      renderHomeDynamic("location_resolved");
+    },
+    { autoGps: true }
+  );
 
   appendHtml(page, `<div id="home_dynamic"></div>`);
 
@@ -1420,8 +1522,9 @@ function renderHome() {
     let sun = null;
 
     try {
-      wx = await fetchWeatherWindMulti(state.lat, state.lon);
-      sun = await fetchSunTimesMulti(state.lat, state.lon);
+      const bundle = await getForecastBundle(state.lat, state.lon);
+      wx = bundle.wx;
+      sun = bundle.sun;
     } catch (e) {
       dyn.innerHTML =
         '<div class="card"><strong>Could not load data.</strong><div class="small muted">Make sure the page is HTTPS. If this persists, the request may be blocked or the network is unstable.</div><div class="small muted" style="margin-top:6px;">' +
@@ -1443,7 +1546,6 @@ function renderHome() {
 
     const idx = dailyDates.indexOf(chosenIso);
     if (idx < 0) {
-      // show what IS available so user understands why it did not change
       const first = dailyDates[0];
       const last = dailyDates[dailyDates.length - 1];
       dyn.innerHTML =
@@ -1487,7 +1589,20 @@ function renderHome() {
     const sunFor = sunForDate(sun, useIso);
     const windows = sunFor ? computeBestFishingWindows(sunFor.sunrise, sunFor.sunset) : [];
 
+    // seed uses date + rounded location so message stays stable for that setup
+    const seed =
+      String(useIso) +
+      "|" +
+      String(Number(state.lat).toFixed(3)) +
+      "," +
+      String(Number(state.lon).toFixed(3)) +
+      "|" +
+      String(state.craft) +
+      "|" +
+      String(state.waterType);
+
     const status = computeGoStatus({
+      seed: seed,
       craft: state.craft,
       waterType: state.waterType,
       windMax: windMax,
@@ -1516,8 +1631,7 @@ function renderHome() {
 
     dyn.innerHTML = "";
 
-    // Precip display string
-    const precipDisplay = popIsFinite ? (String(Math.round(popMax)) + " %") : "None";
+    const precipDisplay = popIsFinite ? String(Math.round(popMax)) + " %" : "None";
 
     appendHtml(
       dyn,
@@ -1642,8 +1756,19 @@ function renderHome() {
   }
 }
 
+// ============================
+// app.js (PART 3 OF 4) END
+// ============================
+// ============================
+// app.js (PART 4 OF 4) BEGIN
+// FishyNW.com - Fishing Tools (Web)
+// Version 1.1.2
+// ASCII ONLY. No Unicode. No smart quotes. No special dashes.
+// ============================
+
 // ----------------------------
 // Depth Calculator
+// - now considers LINE TYPE + line test
 // ----------------------------
 function renderDepthCalculator() {
   const page = pageEl();
@@ -1677,6 +1802,19 @@ function renderDepthCalculator() {
             <option>25</option>
           </select>
         </div>
+
+        <div style="grid-column: 1 / -1;">
+          <div class="fieldLabel">Line type</div>
+          <select id="dc_linetype">
+            <option selected>Monofilament</option>
+            <option>Fluorocarbon</option>
+            <option>Braid</option>
+            <option>Lead core</option>
+          </select>
+          <div class="small muted" style="margin-top:6px;">
+            Line type affects drag and sink behavior. Lead core is a different animal; this is still an estimate.
+          </div>
+        </div>
       </div>
 
       <div style="margin-top:12px;">
@@ -1690,16 +1828,61 @@ function renderDepthCalculator() {
 
   const out = document.getElementById("dc_out");
 
+  function lineTypeFactor(type) {
+    const t = String(type || "").toLowerCase();
+
+    // Higher factor => more drag => less depth
+    // Lower factor => less drag => more depth
+    if (t.indexOf("braid") >= 0) return 0.88;        // thin diameter, lower drag
+    if (t.indexOf("fluoro") >= 0) return 0.96;       // slightly less drag than mono
+    if (t.indexOf("lead") >= 0) return 0.72;         // tends to sink; treated as more depth for same inputs
+    return 1.00;                                     // monofilament baseline
+  }
+
+  function lineTestFactor(testLb, lineType) {
+    const t = safeNum(testLb, 12);
+
+    // Base diameter/drag factor by test
+    let f = t <= 10 ? 1.0 : t <= 12 ? 0.95 : t <= 20 ? 0.85 : 0.78;
+
+    // Braid diameter is lower for the same "lb test"
+    const lt = String(lineType || "").toLowerCase();
+    if (lt.indexOf("braid") >= 0) {
+      // soften the penalty of heavier tests
+      if (t >= 30) f = Math.max(f, 0.84);
+      else if (t >= 25) f = Math.max(f, 0.86);
+      else if (t >= 20) f = Math.max(f, 0.88);
+      else if (t >= 15) f = Math.max(f, 0.92);
+    }
+
+    // Fluoro often a bit stiffer / slightly more drag than braid, but close to mono in practice
+    if (lt.indexOf("fluoro") >= 0) {
+      f = f * 0.99;
+    }
+
+    // Lead core: test number is not comparable to mono/braid test for drag, so reduce impact
+    if (lt.indexOf("lead") >= 0) {
+      f = 0.90;
+    }
+
+    return f;
+  }
+
   document.getElementById("dc_calc").addEventListener("click", function () {
     const speed = safeNum(document.getElementById("dc_speed").value, 1.3);
     const weight = safeNum(document.getElementById("dc_weight").value, 2);
     const line = safeNum(document.getElementById("dc_line").value, 100);
     const test = safeNum(document.getElementById("dc_test").value, 12);
+    const lineType = String(document.getElementById("dc_linetype").value || "Monofilament");
 
-    const dragFactor = test <= 10 ? 1.0 : test <= 12 ? 0.95 : test <= 20 ? 0.85 : 0.78;
+    const dragFactor = lineTestFactor(test, lineType) * lineTypeFactor(lineType);
+
     const base = 0.18 + 0.02 * Math.max(0, weight);
     const speedFactor = 1.5 / Math.max(0.4, speed);
+
     let depth = line * base * speedFactor * dragFactor;
+
+    // cap at 95% of line-out to avoid silly outputs
     depth = Math.max(0, Math.min(depth, line * 0.95));
 
     out.style.display = "block";
@@ -1707,7 +1890,13 @@ function renderDepthCalculator() {
       "<strong>Estimated depth:</strong> " +
       escHtml(depth.toFixed(1)) +
       " ft<br>" +
-      '<div class="small muted" style="margin-top:6px;">Current and lure drag can change results a lot.</div>';
+      "<div class='small muted' style='margin-top:6px;'>" +
+      "Line: " +
+      escHtml(lineType) +
+      " (" +
+      escHtml(String(test)) +
+      " lb). Current and lure drag can change results a lot." +
+      "</div>";
   });
 }
 
@@ -2007,5 +2196,5 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 // ============================
-// app.js (PART 3 OF 3) END
+// app.js (PART 4 OF 4) END
 // ============================

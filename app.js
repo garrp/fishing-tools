@@ -1,7 +1,7 @@
 // ============================
 // app.js (PART 1 OF 4) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.1.2
+// Version 1.1.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -20,9 +20,10 @@
     Deterministic pick (stable per date + location + craft + water) so it does not flicker.
     Still appends cold warnings when needed.
   - Fixes water toggle highlight bug (JS now uses the CSS class: toggleActive).
+  - Improved cold/caution logic: ~43F days should be at least CAUTION (implemented in PART 3).
 */
 
-const APP_VERSION = "1.1.2";
+const APP_VERSION = "1.1.3";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -137,7 +138,11 @@ const LAST_LOC_KEY = "fishynw_last_location_v2"; // {lat:number, lon:number, lab
 function saveLastLocation(lat, lon, label) {
   try {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-    const payload = { lat: Number(lat), lon: Number(lon), label: String(label || "") };
+    const payload = {
+      lat: Number(lat),
+      lon: Number(lon),
+      label: String(label || "")
+    };
     localStorage.setItem(LAST_LOC_KEY, JSON.stringify(payload));
   } catch (e) {
     // ignore
@@ -582,7 +587,7 @@ function niceErr(e) {
 // ============================
 // app.js (PART 2 OF 4) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.1.2
+// Version 1.1.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -965,9 +970,6 @@ function pageEl() {
 
 // ----------------------------
 // UI: Location Picker (reusable)
-// - NO clear saved location button
-// - auto-clears saved location if user edits the box
-// - optional auto GPS on mount (only when no saved location)
 // ----------------------------
 function renderLocationPicker(container, placeKey, onResolved, opts) {
   const options = opts || {};
@@ -979,8 +981,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     <div class="card">
       <h3>Location</h3>
       <input id="${placeKey}_place" type="text"
-        placeholder="Example: Spokane, WA or 99201 or Hauser Lake"
-        style="width:100%;" />
+        placeholder="Example: Spokane, WA or 99201 or Hauser Lake" />
 
       <div class="btnRow">
         <button id="${placeKey}_search">Search place</button>
@@ -1010,27 +1011,23 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     }
   }
 
-  // Restore existing
   if (hasResolvedLocation()) {
     placeInput.value = state.placeLabel ? state.placeLabel : "";
     renderUsing();
   }
 
-  // Auto-clear saved location as soon as user edits the input away from the saved label.
   placeInput.addEventListener("input", function () {
     const raw = String(placeInput.value || "");
     const val = raw.trim();
 
     if (hasResolvedLocation()) {
       const currentLabel = String(state.placeLabel || "").trim();
-
       if (val && val !== currentLabel) {
         clearResolvedLocation();
         matchesEl.innerHTML = "";
         usingEl.textContent = "";
         if (typeof onResolved === "function") onResolved("auto_cleared_by_typing");
       }
-
       if (!val) {
         clearResolvedLocation();
         matchesEl.innerHTML = "";
@@ -1042,7 +1039,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
 
   function doGps() {
     if (!navigator.geolocation) {
-      usingEl.textContent = "Geolocation not supported on this device/browser.";
+      usingEl.textContent = "Geolocation not supported.";
       return;
     }
 
@@ -1148,9 +1145,6 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     usingEl.textContent = "";
   });
 
-  // AUTO GPS ON MOUNT:
-  // Only if requested AND no resolved location already exists.
-  // This keeps your saved location behavior intact and avoids surprise prompting every load when saved location exists.
   if (autoGps && !hasResolvedLocation()) {
     setTimeout(function () {
       if (!hasResolvedLocation()) doGps();
@@ -1164,7 +1158,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
 // ============================
 // app.js (PART 3 OF 4) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.1.2
+// Version 1.1.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -1196,7 +1190,6 @@ function computeBestFishingWindows(sunrise, sunset) {
 // so messages do not flicker every render
 // ----------------------------
 function hash32(str) {
-  // FNV-1a-ish small hash
   const s = String(str || "");
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
@@ -1240,9 +1233,10 @@ function pickFunnyReason(label, seedStr) {
 }
 
 // ----------------------------
-// GO/CAUTION/NO-GO
-// - now uses funny reason picker (5 each)
-// - still appends cold warnings when needed
+// Better caution logic:
+// - Your note: "43 deserves caution"
+//   We add a dedicated "caution floor" band for cold air/water risk.
+//   If average temp is cold enough, we force at least CAUTION even if wind is calm.
 // ----------------------------
 function computeGoStatus(inputs) {
   const craft = inputs.craft || "Kayak (paddle)";
@@ -1253,6 +1247,7 @@ function computeGoStatus(inputs) {
   const tmax = safeNum(inputs.tmax, 55);
   const avgF = (tmin + tmax) / 2;
 
+  // Wind/gust thresholds
   let goWind = 10;
   let cautionWind = 14;
   let nogoWind = 18;
@@ -1261,6 +1256,7 @@ function computeGoStatus(inputs) {
   let cautionGust = 22;
   let nogoGust = 28;
 
+  // Craft adjustments
   if (craft === "Kayak (motorized)") {
     goWind += 2;
     cautionWind += 2;
@@ -1277,6 +1273,7 @@ function computeGoStatus(inputs) {
     nogoGust += 4;
   }
 
+  // Big water stricter
   if (water === "Big water / offshore") {
     goWind -= 3;
     cautionWind -= 3;
@@ -1296,20 +1293,53 @@ function computeGoStatus(inputs) {
   const sWind = scoreFromThresholds(windMax, goWind, cautionWind, nogoWind);
   const sGust = scoreFromThresholds(gustMax, goGust, cautionGust, nogoGust);
 
+  // Start score from worst of wind/gust
   let score = Math.max(sWind, sGust);
 
-  const highF = tmax;
-  const lowF = tmin;
+  // ----------------------------
+  // Cold risk model (new)
+  // - Treat cold as a "floor" on risk so 43F does not show GO by default.
+  // - Uses avg temp primarily, with a small wind amplifier (wind chills and water consequence).
+  //
+  // Bands (avgF):
+  //   >= 55: no cold floor
+  //   50-54: mild cold -> small floor
+  //   45-49: moderate cold -> CAUTION floor
+  //   40-44: stronger -> higher CAUTION floor
+  //   < 40: approach NO-GO depending on wind
+  // ----------------------------
+  let coldFloor = 0;
 
-  const chillPenalty =
-    Math.max(0, 35 - avgF) * 0.6 + Math.max(0, windMax - 5) * 0.4;
-  if (avgF < 45) score += Math.min(18, chillPenalty);
+  if (avgF < 55) {
+    // Wind amplifier: a little extra risk above 5 mph
+    const windAmp = Math.max(0, windMax - 5) * 0.8;
 
+    if (avgF >= 50) coldFloor = 18 + windAmp;          // still often GO, but nudges
+    else if (avgF >= 45) coldFloor = 35 + windAmp;     // forces at least CAUTION (your 43-49 concern)
+    else if (avgF >= 40) coldFloor = 45 + windAmp;     // firm CAUTION
+    else coldFloor = 65 + windAmp;                     // strong risk, can become NO-GO
+
+    // Big water increases cold consequence
+    if (water === "Big water / offshore") coldFloor += 8;
+
+    // Kayak paddle is most exposed; small bump
+    if (craft === "Kayak (paddle)") coldFloor += 4;
+
+    // Cap to sane range
+    coldFloor = Math.max(0, Math.min(100, coldFloor));
+  }
+
+  // Combine: enforce the floor
+  score = Math.max(score, coldFloor);
+
+  // Hard cold gates (kept, slightly tightened)
   let forceAtLeastCaution = false;
   let forceNoGo = false;
 
-  if (highF <= 30) forceAtLeastCaution = true;
-  if (lowF <= 20 || avgF <= 22) forceNoGo = true;
+  // Your previous logic used highF <= 30 to force caution and lowF <= 20 or avg <= 22 for no-go.
+  // Keep those and add a more practical "cold water consequence" floor:
+  if (avgF <= 49) forceAtLeastCaution = true; // ensures 43 reads CAUTION minimum
+  if (tmin <= 28 || avgF <= 35) forceNoGo = true;
 
   score = Math.max(0, Math.min(100, score));
 
@@ -1320,6 +1350,7 @@ function computeGoStatus(inputs) {
   if (forceNoGo) label = "NO-GO";
   else if (forceAtLeastCaution && label === "GO") label = "CAUTION";
 
+  // Keep needle and label aligned
   if (label === "NO-GO") score = Math.max(score, 75);
   else if (label === "CAUTION") score = Math.max(score, 45);
   else score = Math.min(score, 34);
@@ -1346,9 +1377,9 @@ function computeGoStatus(inputs) {
 
   let msg = pickFunnyReason(label, seedStr);
 
-  // Still append serious cold warnings as needed (short, but clear)
-  if (highF <= 30 && label !== "NO-GO") {
-    msg += " Very cold air increases consequence. Dress for immersion, not just air temp.";
+  // Append serious cold warnings (short, but clear)
+  if (avgF <= 49 && label !== "NO-GO") {
+    msg += " Cold air/water increases consequence. Dress for immersion and stay conservative.";
   }
   if (forceNoGo) {
     msg += " Extreme cold can turn a minor issue into an emergency quickly.";
@@ -1389,8 +1420,6 @@ function computeExposureTips(inputs) {
 
 // ----------------------------
 // Home: Date-driven forecast + water toggle + auto refresh
-// - Uses getForecastBundle (cache + TTL) so it does not hammer the API
-// - Fixes water toggle highlight (toggleActive class)
 // ----------------------------
 function renderHome() {
   const page = pageEl();
@@ -1434,7 +1463,6 @@ function renderHome() {
   const btnSmall = document.getElementById("water_small");
   const btnBig = document.getElementById("water_big");
 
-  // Date init: default to today, but allow user to change it
   if (!isIsoDate(state.dateIso)) state.dateIso = isoTodayLocal();
   dateInput.value = state.dateIso;
 
@@ -1474,11 +1502,9 @@ function renderHome() {
     renderHomeDynamic("craft_change");
   });
 
-  // Default small/protected
   if (state.waterType !== "Big water / offshore") state.waterType = "Small / protected";
   paintWaterToggle();
 
-  // Location picker (auto GPS only when no saved location exists)
   renderLocationPicker(
     page,
     "home",
@@ -1490,10 +1516,8 @@ function renderHome() {
 
   appendHtml(page, `<div id="home_dynamic"></div>`);
 
-  // initial draw
   renderHomeDynamic("init");
 
-  // Auto refresh when returning to tab (handy on mobile)
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "visible" && state.tool === "Home" && hasResolvedLocation()) {
       renderHomeDynamic("resume_visible");
@@ -1577,8 +1601,6 @@ function renderHome() {
     const tmin = safeNum(wx.daily.tmin[idx], 0);
     const tmax = safeNum(wx.daily.tmax[idx], 0);
 
-    // Precip can be null/undefined depending on data source/season.
-    // We treat non-finite as "None" for display.
     const popRaw = wx.daily.popMax && wx.daily.popMax.length ? wx.daily.popMax[idx] : null;
     const popIsFinite = Number.isFinite(Number(popRaw));
     const popMax = popIsFinite ? safeNum(popRaw, 0) : null;
@@ -1589,7 +1611,6 @@ function renderHome() {
     const sunFor = sunForDate(sun, useIso);
     const windows = sunFor ? computeBestFishingWindows(sunFor.sunrise, sunFor.sunset) : [];
 
-    // seed uses date + rounded location so message stays stable for that setup
     const seed =
       String(useIso) +
       "|" +
@@ -1762,13 +1783,13 @@ function renderHome() {
 // ============================
 // app.js (PART 4 OF 4) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.1.2
+// Version 1.1.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
 // ----------------------------
 // Depth Calculator
-// - now considers LINE TYPE + line test
+// - considers LINE TYPE + line test
 // ----------------------------
 function renderDepthCalculator() {
   const page = pageEl();
@@ -1798,8 +1819,10 @@ function renderDepthCalculator() {
           <select id="dc_test">
             <option>10</option>
             <option selected>12</option>
+            <option>15</option>
             <option>20</option>
             <option>25</option>
+            <option>30</option>
           </select>
         </div>
 
@@ -1833,34 +1856,36 @@ function renderDepthCalculator() {
 
     // Higher factor => more drag => less depth
     // Lower factor => less drag => more depth
-    if (t.indexOf("braid") >= 0) return 0.88;        // thin diameter, lower drag
-    if (t.indexOf("fluoro") >= 0) return 0.96;       // slightly less drag than mono
-    if (t.indexOf("lead") >= 0) return 0.72;         // tends to sink; treated as more depth for same inputs
-    return 1.00;                                     // monofilament baseline
+    if (t.indexOf("braid") >= 0) return 0.88;
+    if (t.indexOf("fluoro") >= 0) return 0.96;
+    if (t.indexOf("lead") >= 0) return 0.72;
+    return 1.0;
   }
 
   function lineTestFactor(testLb, lineType) {
     const t = safeNum(testLb, 12);
 
-    // Base diameter/drag factor by test
-    let f = t <= 10 ? 1.0 : t <= 12 ? 0.95 : t <= 20 ? 0.85 : 0.78;
+    // Base diameter/drag factor by test (mono-ish baseline)
+    let f = t <= 10 ? 1.0 : t <= 12 ? 0.95 : t <= 15 ? 0.90 : t <= 20 ? 0.85 : t <= 25 ? 0.80 : 0.76;
 
-    // Braid diameter is lower for the same "lb test"
     const lt = String(lineType || "").toLowerCase();
+
+    // Braid: soften penalty of heavier tests
     if (lt.indexOf("braid") >= 0) {
-      // soften the penalty of heavier tests
-      if (t >= 30) f = Math.max(f, 0.84);
-      else if (t >= 25) f = Math.max(f, 0.86);
-      else if (t >= 20) f = Math.max(f, 0.88);
-      else if (t >= 15) f = Math.max(f, 0.92);
+      if (t >= 50) f = Math.max(f, 0.86);
+      else if (t >= 40) f = Math.max(f, 0.88);
+      else if (t >= 30) f = Math.max(f, 0.90);
+      else if (t >= 25) f = Math.max(f, 0.92);
+      else if (t >= 20) f = Math.max(f, 0.94);
+      else if (t >= 15) f = Math.max(f, 0.96);
     }
 
-    // Fluoro often a bit stiffer / slightly more drag than braid, but close to mono in practice
+    // Fluoro: close to mono in drag, slightly stiffer (tiny nudge)
     if (lt.indexOf("fluoro") >= 0) {
       f = f * 0.99;
     }
 
-    // Lead core: test number is not comparable to mono/braid test for drag, so reduce impact
+    // Lead core: test number not comparable; reduce impact
     if (lt.indexOf("lead") >= 0) {
       f = 0.90;
     }
@@ -1882,7 +1907,7 @@ function renderDepthCalculator() {
 
     let depth = line * base * speedFactor * dragFactor;
 
-    // cap at 95% of line-out to avoid silly outputs
+    // cap at 95% of line-out
     depth = Math.max(0, Math.min(depth, line * 0.95));
 
     out.style.display = "block";

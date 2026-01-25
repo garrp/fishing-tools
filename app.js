@@ -26,6 +26,7 @@
   - Saved location auto-clears if user edits the location input.
   - Place input normalizes "City, st" (state casing ignored).
   - FIX: Robust fetch w/ timeout + better error handling for Open-Meteo (prevents silent JSON parse failures).
+  - NEW: Auto-request GPS on app open; if allowed, refreshes Home data automatically.
 */
 
 const APP_VERSION = "1.1.0";
@@ -119,16 +120,20 @@ function renderConsentBannerIfNeeded() {
 
   document.body.appendChild(bar);
 
-  document.getElementById("consent_accept").addEventListener("click", function () {
-    setConsent("granted");
-    removeConsentBanner();
-    loadGa4();
-  });
+  document
+    .getElementById("consent_accept")
+    .addEventListener("click", function () {
+      setConsent("granted");
+      removeConsentBanner();
+      loadGa4();
+    });
 
-  document.getElementById("consent_decline").addEventListener("click", function () {
-    setConsent("denied");
-    removeConsentBanner();
-  });
+  document
+    .getElementById("consent_decline")
+    .addEventListener("click", function () {
+      setConsent("denied");
+      removeConsentBanner();
+    });
 }
 
 // ----------------------------
@@ -139,7 +144,11 @@ const LAST_LOC_KEY = "fishynw_last_location_v2"; // {lat:number, lon:number, lab
 function saveLastLocation(lat, lon, label) {
   try {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-    const payload = { lat: Number(lat), lon: Number(lon), label: String(label || "") };
+    const payload = {
+      lat: Number(lat),
+      lon: Number(lon),
+      label: String(label || "")
+    };
     localStorage.setItem(LAST_LOC_KEY, JSON.stringify(payload));
   } catch (e) {
     // ignore
@@ -516,14 +525,60 @@ function stopSpeedWatchIfRunning() {
 }
 
 // ----------------------------
+// Auto-resolve location on app open
+// - Triggers browser permission prompt (as requested)
+// - If allowed: sets lat/lon and refreshes UI/data
+// - If denied/unavailable: falls back to last saved location (already supported)
+// ----------------------------
+function autoResolveLocationOnOpen() {
+  if (!navigator.geolocation) return;
+
+  // If we already have a resolved location (or restored last), don't prompt again.
+  if (hasResolvedLocation()) return;
+
+  try {
+    navigator.geolocation.getCurrentPosition(
+      function (pos) {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+
+        // Set immediately so app can load data right away
+        setResolvedLocation(lat, lon, "Current location");
+
+        // Re-render so Home will refresh with the new location
+        render();
+
+        // Then try to name it (nearest city) and re-render again for the label
+        reverseGeocode(lat, lon).then(function (label) {
+          if (label) setResolvedLocation(lat, lon, label);
+          render();
+        });
+      },
+      function (_err) {
+        // User denied or it failed - do nothing.
+        // Your existing "loadLastLocation()" fallback in render() still applies.
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 500 }
+    );
+  } catch (e) {
+    // ignore
+  }
+}
+
+// ----------------------------
 // Robust fetch helpers (FIX for "Could not load data")
 // - Adds timeout (mobile networks can hang)
 // - Handles non-JSON responses (CDN errors, 429, 5xx) without crashing
 // ----------------------------
 async function fetchJson(url, timeoutMs) {
   const ms = Number(timeoutMs || 12000);
-  const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
-  const t = ctrl ? setTimeout(function () { ctrl.abort(); }, ms) : null;
+  const ctrl =
+    typeof AbortController !== "undefined" ? new AbortController() : null;
+  const t = ctrl
+    ? setTimeout(function () {
+        ctrl.abort();
+      }, ms)
+    : null;
 
   try {
     const r = await fetch(url, ctrl ? { signal: ctrl.signal } : undefined);
@@ -534,21 +589,32 @@ async function fetchJson(url, timeoutMs) {
       data = JSON.parse(text);
     } catch (e) {
       // Not JSON - throw a readable error
-      const snippet = String(text || "").slice(0, 160).replace(/\s+/g, " ").trim();
-      throw new Error("Bad JSON response (" + r.status + "). " + (snippet ? snippet : "No body."));
+      const snippet = String(text || "")
+        .slice(0, 160)
+        .replace(/\s+/g, " ")
+        .trim();
+      throw new Error(
+        "Bad JSON response (" +
+          r.status +
+          "). " +
+          (snippet ? snippet : "No body.")
+      );
     }
 
     if (!r.ok) {
       const msg =
-        (data && (data.reason || data.error || data.message)) ?
-          String(data.reason || data.error || data.message) :
-          ("HTTP " + r.status);
+        data && (data.reason || data.error || data.message)
+          ? String(data.reason || data.error || data.message)
+          : "HTTP " + r.status;
       throw new Error(msg);
     }
 
     return data;
   } catch (e2) {
-    const msg = (e2 && e2.name === "AbortError") ? "Request timed out." : String(e2 && e2.message ? e2.message : e2);
+    const msg =
+      e2 && e2.name === "AbortError"
+        ? "Request timed out."
+        : String(e2 && e2.message ? e2.message : e2);
     throw new Error(msg);
   } finally {
     if (t) clearTimeout(t);
@@ -586,7 +652,11 @@ async function geocodeSearch(query, count) {
         const admin1 = x.admin1 || "";
         const country = x.country || "";
         const parts = [name, admin1, country].filter(Boolean);
-        return { label: parts.join(", "), lat: Number(x.latitude), lon: Number(x.longitude) };
+        return {
+          label: parts.join(", "),
+          lat: Number(x.latitude),
+          lon: Number(x.longitude)
+        };
       })
       .filter(function (x) {
         return Number.isFinite(x.lat) && Number.isFinite(x.lon);
@@ -652,12 +722,20 @@ function sunForDate(sunData, dateIso) {
   const idx = sunData.days.indexOf(dateIso);
   if (idx < 0) return null;
 
-  const sr = sunData.sunrise && sunData.sunrise[idx] ? sunData.sunrise[idx] : null;
+  const sr =
+    sunData.sunrise && sunData.sunrise[idx] ? sunData.sunrise[idx] : null;
   const ss = sunData.sunset && sunData.sunset[idx] ? sunData.sunset[idx] : null;
   if (!sr || !ss) return null;
 
   return { sunrise: new Date(sr), sunset: new Date(ss) };
 }
+
+// ============================
+// app.js (PART 1 OF 3) END
+// ============================
+// ============================
+// app.js (PART 2 OF 3) BEGIN
+// ============================
 
 // ----------------------------
 // API: Weather/Wind multi (7 days)
@@ -814,10 +892,6 @@ function drawWindLineChart(canvas, points) {
 
   ctx.textAlign = "left";
 }
-
-// ============================
-// app.js (PART 2 OF 3) BEGIN
-// ============================
 
 // ----------------------------
 // UI: Header + Nav
@@ -1056,6 +1130,9 @@ function renderLocationPicker(container, placeKey, onResolved) {
   });
 }
 
+// ============================
+// app.js (PART 2 OF 3) END
+// ============================
 // ============================
 // app.js (PART 3 OF 3) BEGIN
 // ============================
@@ -1884,6 +1961,9 @@ document.addEventListener("DOMContentLoaded", function () {
   } catch (e) {
     // ignore
   }
+
+  // NEW: auto-request GPS on app open, then refresh data if allowed
+  autoResolveLocationOnOpen();
 
   render();
 });

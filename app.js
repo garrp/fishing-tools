@@ -1,7 +1,7 @@
 // ============================
 // app.js (PART 1 OF 3) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.1.2
+// Version 1.1.0+ (date picker + forecast-by-date + funny status lines)
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -19,16 +19,18 @@
   - Uses Open-Meteo Geocoding for place search.
   - Uses browser geolocation for "Use my location".
   - Location is saved to localStorage and restored on next visit.
-  - Home supports picking a date (up to forecast range).
+  - Home supports date picker and pulls forecast for selected day (within forecast window).
+  - Home inputs are stacked (mobile-first).
   - Water type is a toggle (Small default, Big stricter).
   - GA4 loads ONLY after user accepts the consent banner.
   - Saved location auto-clears if user edits the location input.
   - Place input normalizes "City, st" (state casing ignored).
-  - FIX: Robust fetch w/ timeout + better error handling for Open-Meteo.
-  - UPDATE: GO/CAUTION/NO-GO now includes temperature risk logic (extreme cold/heat).
+  - Robust fetch w/ timeout + better error handling for Open-Meteo.
+  - GO/CAUTION/NO-GO includes temperature logic (cold + heat penalties).
+  - Funny remark appears under the CAC Go/No-Go bar message (one random from five).
 */
 
-const APP_VERSION = "1.1.2";
+const APP_VERSION = "1.1.0";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -182,7 +184,7 @@ const state = {
   selectedIndex: 0,
   speedWatchId: null,
 
-  // Selected day (YYYY-MM-DD)
+  // selected date for Home (YYYY-MM-DD)
   dateIso: "",
 
   // Options for go/caution/no-go
@@ -410,6 +412,37 @@ let app = null;
 })();
 
 // ----------------------------
+// Funny message engine (5 total, show 1 random)
+// ----------------------------
+const FUNNY_KAYAK_MESSAGES = [
+  "Congratulations. You now have a scientifically valid reason to tell your spouse you are going kayak fishing.",
+  "The weather gods have spoken. They did not say no. That is basically a yes.",
+  "According to advanced meteorological science, this is an acceptable level of irresponsibility.",
+  "This forecast strongly supports the argument that you deserve to disappear on the water for several hours.",
+  "Nature says you can go kayaking. Your responsibilities may disagree."
+];
+
+function getRandomKayakMessage() {
+  const i = Math.floor(Math.random() * FUNNY_KAYAK_MESSAGES.length);
+  return FUNNY_KAYAK_MESSAGES[i];
+}
+
+function buildFunnyStatusMessage(label) {
+  const base = getRandomKayakMessage();
+
+  if (label === "GO") {
+    return base;
+  }
+  if (label === "CAUTION") {
+    return base + " But maybe keep it close to shore so you can still claim you were being responsible.";
+  }
+  if (label === "NO-GO") {
+    return base + " Unfortunately, nature also says today is a great day to stay alive.";
+  }
+  return base;
+}
+
+// ----------------------------
 // Utilities
 // ----------------------------
 function escHtml(s) {
@@ -458,6 +491,10 @@ function clearResolvedLocation() {
   clearLastLocation();
 }
 
+function isIsoDate(s) {
+  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
 function isoTodayLocal() {
   const d = new Date();
   const y = d.getFullYear();
@@ -466,8 +503,22 @@ function isoTodayLocal() {
   return y + "-" + m + "-" + day;
 }
 
-function isIsoDate(s) {
-  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+function addDaysIso(iso, days) {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return isoTodayLocal();
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setDate(d.getDate() + Number(days || 0));
+  const y = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return y + "-" + mm + "-" + dd;
+}
+
+function clampIsoToRange(iso, minIso, maxIso) {
+  if (!isIsoDate(iso)) return minIso;
+  if (iso < minIso) return minIso;
+  if (iso > maxIso) return maxIso;
+  return iso;
 }
 
 function filterHourlyToDate(times, values, dateIso) {
@@ -557,6 +608,15 @@ function niceErr(e) {
   return s.length > 180 ? s.slice(0, 180) + "..." : s;
 }
 
+// ============================
+// app.js (PART 1 OF 3) END
+// ============================
+// ============================
+// app.js (PART 2 OF 3) BEGIN
+// FishyNW.com - Fishing Tools (Web)
+// Continuation: APIs + chart + UI header/nav + location picker
+// ============================
+
 // ----------------------------
 // API: Geocoding
 // ----------------------------
@@ -620,9 +680,11 @@ async function reverseGeocode(lat, lon) {
 }
 
 // ----------------------------
-// API: Sunrise/Sunset (7 days)
+// API: Sunrise/Sunset (range, used for chosen date)
 // ----------------------------
-async function fetchSunTimesMulti(lat, lon) {
+async function fetchSunTimesRange(lat, lon, days) {
+  const d = Math.max(1, Math.min(16, Number(days || 7)));
+
   const url =
     "https://api.open-meteo.com/v1/forecast" +
     "?latitude=" +
@@ -630,17 +692,18 @@ async function fetchSunTimesMulti(lat, lon) {
     "&longitude=" +
     encodeURIComponent(lon) +
     "&daily=sunrise,sunset" +
-    "&forecast_days=7" +
+    "&forecast_days=" +
+    encodeURIComponent(d) +
     "&timezone=auto";
 
   const data = await fetchJson(url, 12000);
 
   const daily = data && data.daily ? data.daily : null;
-  const days = daily && daily.time ? daily.time : [];
+  const dayArr = daily && daily.time ? daily.time : [];
   const sr = daily && daily.sunrise ? daily.sunrise : [];
   const ss = daily && daily.sunset ? daily.sunset : [];
 
-  return { days: days, sunrise: sr, sunset: ss };
+  return { days: dayArr, sunrise: sr, sunset: ss };
 }
 
 function sunForDate(sunData, dateIso) {
@@ -656,9 +719,12 @@ function sunForDate(sunData, dateIso) {
 }
 
 // ----------------------------
-// API: Weather/Wind multi (7 days)
+// API: Weather/Wind (range, used for chosen date)
+// - includes precipitation_probability_max (can be null)
 // ----------------------------
-async function fetchWeatherWindMulti(lat, lon) {
+async function fetchWeatherWindRange(lat, lon, days) {
+  const d = Math.max(1, Math.min(16, Number(days || 7)));
+
   const url =
     "https://api.open-meteo.com/v1/forecast" +
     "?latitude=" +
@@ -669,7 +735,8 @@ async function fetchWeatherWindMulti(lat, lon) {
     "&hourly=wind_speed_10m" +
     "&wind_speed_unit=mph" +
     "&temperature_unit=fahrenheit" +
-    "&forecast_days=7" +
+    "&forecast_days=" +
+    encodeURIComponent(d) +
     "&timezone=auto";
 
   const data = await fetchJson(url, 12000);
@@ -749,6 +816,7 @@ function drawWindLineChart(canvas, points) {
     return padT + (1 - t) * h;
   }
 
+  // grid
   ctx.strokeStyle = "rgba(0,0,0,0.10)";
   ctx.lineWidth = 1;
   for (let g = 0; g <= 2; g++) {
@@ -759,6 +827,7 @@ function drawWindLineChart(canvas, points) {
     ctx.stroke();
   }
 
+  // y labels
   ctx.fillStyle = "rgba(0,0,0,0.70)";
   ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
   const yTop = maxV;
@@ -769,6 +838,7 @@ function drawWindLineChart(canvas, points) {
   ctx.fillText(String(Math.round(yMid)) + " mph", 6, padT + h / 2 + 4);
   ctx.fillText(String(Math.round(yBot)) + " mph", 6, padT + h + 4);
 
+  // line
   ctx.strokeStyle = "rgba(7,27,31,0.75)";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -778,6 +848,7 @@ function drawWindLineChart(canvas, points) {
   }
   ctx.stroke();
 
+  // dots
   ctx.fillStyle = "rgba(7,27,31,0.70)";
   for (let d = 0; d < points.length; d++) {
     const xx = xFor(d);
@@ -810,13 +881,6 @@ function drawWindLineChart(canvas, points) {
 
   ctx.textAlign = "left";
 }
-
-// ============================
-// app.js (PART 1 OF 3) END
-// ============================
-// ============================
-// app.js (PART 2 OF 3) BEGIN
-// ============================
 
 // ----------------------------
 // UI: Header + Nav
@@ -873,13 +937,6 @@ function renderHeaderAndNav() {
       btn.addEventListener("click", function () {
         stopSpeedWatchIfRunning();
         state.tool = toolName;
-
-        try {
-          window.scrollTo(0, 0);
-        } catch (e) {
-          // ignore
-        }
-
         render();
       });
     }
@@ -896,12 +953,9 @@ function pageEl() {
 // UI: Location Picker (reusable)
 // - NO clear saved location button
 // - auto-clears saved location if user edits the box
-// - optional autoGPS: tries to get GPS on first load only if no saved location
+// - optional: attemptAutoGps if true
 // ----------------------------
-function renderLocationPicker(container, placeKey, onResolved, opts) {
-  const options = opts || {};
-  const autoGPS = !!options.autoGPS;
-
+function renderLocationPicker(container, placeKey, onResolved, attemptAutoGps) {
   appendHtml(
     container,
     `
@@ -912,8 +966,8 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
         style="width:100%;" />
 
       <div class="btnRow">
-        <button id="${placeKey}_search" type="button">Search place</button>
-        <button id="${placeKey}_gps" type="button">Use my location</button>
+        <button id="${placeKey}_search">Search place</button>
+        <button id="${placeKey}_gps">Use my location</button>
       </div>
 
       <div id="${placeKey}_matches" style="margin-top:10px;"></div>
@@ -925,7 +979,6 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
   const usingEl = document.getElementById(placeKey + "_using");
   const matchesEl = document.getElementById(placeKey + "_matches");
   const placeInput = document.getElementById(placeKey + "_place");
-  const gpsBtn = document.getElementById(placeKey + "_gps");
 
   function renderUsing() {
     if (hasResolvedLocation()) {
@@ -968,7 +1021,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     }
   });
 
-  function doGpsResolve() {
+  function doGps() {
     if (!navigator.geolocation) {
       usingEl.textContent = "Geolocation not supported on this device/browser.";
       return;
@@ -1013,8 +1066,8 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     );
   }
 
-  gpsBtn.addEventListener("click", function () {
-    doGpsResolve();
+  document.getElementById(placeKey + "_gps").addEventListener("click", function () {
+    doGps();
   });
 
   document.getElementById(placeKey + "_search").addEventListener("click", async function () {
@@ -1047,7 +1100,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
       optionsHtml +
       "</select>" +
       '<div style="margin-top:10px;">' +
-      '<button id="' + placeKey + '_use" type="button" style="width:100%;">Use this place</button>' +
+      '<button id="' + placeKey + '_use" style="width:100%;">Use this place</button>' +
       "</div>" +
       '<div class="small muted" style="margin-top:8px;">Pick the correct match, then tap Use this place.</div>';
 
@@ -1070,70 +1123,17 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     usingEl.textContent = "";
   });
 
-  // Auto GPS on first load only if requested and no resolved location yet.
-  // This respects permission prompts and avoids overriding a saved location.
-  if (autoGPS && !hasResolvedLocation()) {
+  // Attempt auto-GPS ONLY if:
+  // - attemptAutoGps is true
+  // - and there is no resolved location yet
+  // This will prompt permission on load in some browsers.
+  if (attemptAutoGps === true && !hasResolvedLocation()) {
     try {
-      setTimeout(function () {
-        if (!hasResolvedLocation()) doGpsResolve();
-      }, 250);
+      doGps();
     } catch (e) {
       // ignore
     }
   }
-}
-
-// ----------------------------
-// Date helpers
-// ----------------------------
-
-// Days between two YYYY-MM-DD (a - b)
-function isoDaysBetween(aIso, bIso) {
-  try {
-    const a = new Date(aIso + "T00:00:00");
-    const b = new Date(bIso + "T00:00:00");
-    const ms = a.getTime() - b.getTime();
-    return Math.round(ms / (24 * 60 * 60 * 1000));
-  } catch (e) {
-    return 0;
-  }
-}
-
-// Compute selectable min/max dates based on daily forecast array
-function forecastMinMax(dailyDates) {
-  if (!dailyDates || !dailyDates.length) return null;
-  const min = String(dailyDates[0]);
-  const max = String(dailyDates[dailyDates.length - 1]);
-  if (!isIsoDate(min) || !isIsoDate(max)) return null;
-  return { min: min, max: max };
-}
-
-// Get the best available index for selected date; fallback to nearest in range.
-function pickForecastIndex(dailyDates, targetIso) {
-  if (!dailyDates || !dailyDates.length) return { idx: 0, iso: "" };
-  const t = isIsoDate(targetIso) ? targetIso : String(dailyDates[0]);
-  let idx = dailyDates.indexOf(t);
-  if (idx >= 0) return { idx: idx, iso: dailyDates[idx] };
-
-  // Clamp if outside range, else fall back to nearest by simple scan
-  const min = dailyDates[0];
-  const max = dailyDates[dailyDates.length - 1];
-
-  if (t < min) return { idx: 0, iso: min };
-  if (t > max) return { idx: dailyDates.length - 1, iso: max };
-
-  // Nearest by absolute day difference
-  let bestI = 0;
-  let bestAbs = Infinity;
-  for (let i = 0; i < dailyDates.length; i++) {
-    const di = isoDaysBetween(dailyDates[i], t);
-    const abs = Math.abs(di);
-    if (abs < bestAbs) {
-      bestAbs = abs;
-      bestI = i;
-    }
-  }
-  return { idx: bestI, iso: dailyDates[bestI] };
 }
 
 // ============================
@@ -1141,7 +1141,35 @@ function pickForecastIndex(dailyDates, targetIso) {
 // ============================
 // ============================
 // app.js (PART 3 OF 3) BEGIN
+// FishyNW.com - Fishing Tools (Web)
+// Home: date picker (forecast by chosen day), CAC logic w temp extremes,
+// precipitation None handling, and funny remark under the CAC bar.
+// Also includes: Depth, Tips, Speedometer, router, boot.
 // ============================
+
+// ----------------------------
+// Funny remarks (pick 1 randomly each refresh)
+// ----------------------------
+const FUNNY_REMARKS = [
+  "Look at that. Science says you can go kayak fishing. Tell your wife its basically a safety requirement.",
+  "Forecast looks decent. If anyone asks, you are doing important research on fish behavior.",
+  "This is your official permission slip to go fishing. Signed: the wind.",
+  "Green light. Go catch something, and if you dont, blame the bar graph.",
+  "Conditions say go. The fish will still act like they did not get the memo."
+];
+
+function pickFunnyRemark(seedStr) {
+  // Deterministic-ish per day/location so it doesnt flicker constantly,
+  // but still changes when date changes.
+  const s = String(seedStr || "");
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const idx = Math.abs(h) % FUNNY_REMARKS.length;
+  return FUNNY_REMARKS[idx];
+}
 
 // ----------------------------
 // Home logic helpers
@@ -1166,10 +1194,11 @@ function computeBestFishingWindows(sunrise, sunset) {
   return out;
 }
 
-// GO/CAUTION/NO-GO
-// UPDATE: now includes temperature risk logic for extreme cold and extreme heat.
-// - Extreme cold: penalize hard; force caution/no-go at low temps, but allow "caution" in very cold if user is prepared.
-// - Extreme heat: penalize and can force caution/no-go depending on severity.
+// ----------------------------
+// CAC GO/CAUTION/NO-GO
+// - Wind thresholds by craft & water
+// - Temp extremes influence result (cold + heat)
+// ----------------------------
 function computeGoStatus(inputs) {
   const craft = inputs.craft || "Kayak (paddle)";
   const water = inputs.waterType || "Small / protected";
@@ -1179,10 +1208,10 @@ function computeGoStatus(inputs) {
   const tmax = safeNum(inputs.tmax, 55);
 
   const avgF = (tmin + tmax) / 2;
-  const highF = tmax;
   const lowF = tmin;
+  const highF = tmax;
 
-  // Base wind thresholds
+  // baseline wind thresholds (mph)
   let goWind = 10;
   let cautionWind = 14;
   let nogoWind = 18;
@@ -1191,7 +1220,6 @@ function computeGoStatus(inputs) {
   let cautionGust = 22;
   let nogoGust = 28;
 
-  // Craft adjustments
   if (craft === "Kayak (motorized)") {
     goWind += 2; cautionWind += 2; nogoWind += 2;
     goGust += 2; cautionGust += 2; nogoGust += 2;
@@ -1200,7 +1228,7 @@ function computeGoStatus(inputs) {
     goGust += 4; cautionGust += 4; nogoGust += 4;
   }
 
-  // Water adjustments
+  // Big water is stricter
   if (water === "Big water / offshore") {
     goWind -= 3; cautionWind -= 3; nogoWind -= 3;
     goGust -= 3; cautionGust -= 3; nogoGust -= 3;
@@ -1215,99 +1243,73 @@ function computeGoStatus(inputs) {
 
   const sWind = scoreFromThresholds(windMax, goWind, cautionWind, nogoWind);
   const sGust = scoreFromThresholds(gustMax, goGust, cautionGust, nogoGust);
-
-  // Start with wind risk
   let score = Math.max(sWind, sGust);
 
-  // ----------------------------
-  // Temperature risk model
-  // ----------------------------
+  // Cold penalty (consequence)
+  // More aggressive below 40, steep below 25, extreme below 15
+  if (avgF < 40) score += Math.min(22, (40 - avgF) * 0.7);
+  if (avgF < 25) score += Math.min(18, (25 - avgF) * 1.0);
+  if (avgF < 15) score += 20;
 
-  // Cold risk:
-  // - Below 40F average: add increasing penalty.
-  // - Below 32F high: force at least CAUTION.
-  // - Below 20F low OR avg <= 22: force NO-GO (too much consequence).
-  // - Around 15F: still NO-GO by default, but we will message that a drysuit and planning might make it "caution" only
-  //   in very sheltered scenarios; we keep NO-GO because this app cannot verify preparedness.
+  // Heat penalty (heat illness risk)
+  // Caution at high heat; more strict above 95; extreme at 105+
+  if (highF >= 90) score += Math.min(18, (highF - 90) * 0.7);
+  if (highF >= 98) score += Math.min(22, (highF - 98) * 1.0);
+  if (highF >= 105) score += 25;
+
+  // Force rules that override the label (your examples)
   let forceAtLeastCaution = false;
   let forceNoGo = false;
 
-  // Cold penalty shaped by avgF and windMax (wind + cold is worse)
-  if (avgF < 50) {
-    const coldDelta = 50 - avgF;
-    const windFactor = Math.max(0, windMax - 5) * 0.35;
-    const coldPenalty = coldDelta * 0.65 + windFactor;
-    score += Math.min(35, coldPenalty);
-  }
+  // Cold example logic:
+  // - around 30: at least CAUTION
+  // - around 15: CAUTION (drysuit strongly implied) but NO-GO if wind is also high
+  if (avgF <= 30) forceAtLeastCaution = true;
+  if (avgF <= 12) forceAtLeastCaution = true;
+  if (avgF <= 5) forceNoGo = true;
 
-  if (highF <= 32) forceAtLeastCaution = true;
-  if (lowF <= 20 || avgF <= 22) forceNoGo = true;
+  // If very cold AND wind is not calm, push to NO-GO
+  if (avgF <= 15 && (windMax >= 10 || gustMax >= 18)) forceNoGo = true;
 
-  // Heat risk:
-  // - High >= 90: add penalty.
-  // - High >= 100: force at least CAUTION.
-  // - High >= 105 OR avg >= 95: can force NO-GO (heat stress risk).
-  if (highF >= 90) {
-    const heatDelta = highF - 90;
-    const heatPenalty = heatDelta * 1.1; // ramps quickly
-    score += Math.min(30, heatPenalty);
-  }
+  // Heat example logic:
+  // - 100+: at least CAUTION (heat protection)
+  // - 108+: NO-GO (too risky for a casual day)
   if (highF >= 100) forceAtLeastCaution = true;
-  if (highF >= 105 || avgF >= 95) forceNoGo = true;
+  if (highF >= 108) forceNoGo = true;
 
-  // Big water: amplify temperature consequence slightly
-  if (water === "Big water / offshore") {
-    if (avgF <= 40) score += 6;
-    if (highF >= 95) score += 6;
-  }
-
-  // Clamp score
   score = Math.max(0, Math.min(100, score));
 
-  // Label from score first
   let label = "GO";
   if (score >= 70) label = "NO-GO";
   else if (score >= 35) label = "CAUTION";
 
-  // Force overrides from temperature
   if (forceNoGo) label = "NO-GO";
   else if (forceAtLeastCaution && label === "GO") label = "CAUTION";
 
-  // Needle position stabilization
+  // Make needle match label floors
   if (label === "NO-GO") score = Math.max(score, 75);
   else if (label === "CAUTION") score = Math.max(score, 45);
   else score = Math.min(score, 34);
 
   const needlePct = Math.max(0, Math.min(100, score));
 
-  // Message
-  let msg =
-    "Generally favorable. Watch for local funnels, open water chop, and changing conditions.";
+  // Message is now the FUNNY remark (per your request)
+  // We still add safety add-ons for extremes.
+  let msg = "";
 
-  if (label === "CAUTION") {
-    msg =
-      "Use caution. Expect changing conditions. Stay close to shore and keep an easy exit plan.";
-  }
-  if (label === "NO-GO") {
-    msg =
-      "Not recommended. Conditions are high risk for the selected craft/water type. Consider sheltered water or reschedule.";
-  }
+  // Extra safety notes (short) appended
+  const safetyBits = [];
+  if (avgF <= 40) safetyBits.push("Cold conditions increase consequence. Dress for immersion, not just air temp.");
+  if (avgF <= 20) safetyBits.push("Extreme cold can turn a small issue into an emergency fast.");
+  if (highF >= 95) safetyBits.push("High heat risk. Bring extra water, shade, and sun protection.");
 
-  // Add temp-specific guidance
-  if (avgF <= 40) {
-    msg += " Cold conditions increase consequence. Dress for immersion, not just air temp.";
-  }
-  if (lowF <= 20) {
-    msg += " Extreme cold can turn a minor issue into an emergency quickly.";
-  }
-  if (highF >= 95) {
-    msg += " Heat stress risk. Bring extra water, sun protection, and take breaks.";
-  }
-  if (highF >= 105 || avgF >= 95) {
-    msg += " Dangerous heat. Consider going early/late or rescheduling.";
-  }
-
-  return { label: label, score: score, needlePct: needlePct, message: msg };
+  return {
+    label: label,
+    score: score,
+    needlePct: needlePct,
+    funnySeed: (inputs.seed || ""),
+    safetyBits: safetyBits
+  };
 }
 
 function computeExposureTips(inputs) {
@@ -1315,31 +1317,24 @@ function computeExposureTips(inputs) {
   const tmax = safeNum(inputs.tmax, 55);
   const windMax = safeNum(inputs.windMax, 0);
   const gustMax = safeNum(inputs.gustMax, windMax);
-  const avgF = (tmin + tmax) / 2;
 
+  const avgF = (tmin + tmax) / 2;
   const tips = [];
 
   tips.push("Sunscreen matters even on cloudy days. Reapply and protect lips.");
   tips.push("Bring a dry bag with a spare layer and gloves. Keep keys/phone in a waterproof pouch.");
 
-  // Cold tips
   if (avgF <= 50) {
     tips.unshift("Avoid cotton layers. Use synthetics or wool that insulate when wet.");
     tips.unshift("Cold air and likely cold water: lean toward a dry suit or a proper wet suit setup.");
     if (avgF <= 40) tips.unshift("Neoprene gloves/boots help. Limit exposure time and keep shore close.");
-    if (avgF <= 25) tips.unshift("Extreme cold: prioritize safety and short outings on sheltered water only.");
   }
 
-  // Heat tips
-  if (tmax >= 90) {
-    tips.unshift("Hot day: bring extra water and electrolytes. Take shade breaks.");
-    tips.unshift("Wear sun shirts, hat, and light breathable layers. Consider a neck gaiter.");
-  }
-  if (tmax >= 100) {
-    tips.unshift("Dangerous heat possible: consider early/late fishing or rescheduling.");
+  if (tmax >= 85) {
+    tips.unshift("Hot day: wear sun shirts and light, sun-repellent clothing. Use a wide-brim hat.");
+    tips.unshift("Hydrate early. Bring more water than you think you need.");
   }
 
-  // Wind tips
   if (windMax >= 12 || gustMax >= 20) {
     tips.push("Wind can spike fast. Leash key gear and plan a protected return route.");
   }
@@ -1348,10 +1343,7 @@ function computeExposureTips(inputs) {
 }
 
 // ----------------------------
-// Home: date picker (selectable) + forecast by selected day
-// - Updates when date changes
-// - Shows precipitation as "None" if missing/not numeric
-// - Auto-refresh when app opens (uses saved location; GPS optional prompt via button)
+// Home: date picker + forecast-by-date
 // ----------------------------
 function renderHome() {
   const page = pageEl();
@@ -1361,12 +1353,12 @@ function renderHome() {
     `
     <div class="card">
       <h2>Weather/Wind + Best Times</h2>
-      <div class="small muted">Pick a date within the forecast range for your location. The app builds tiles, wind chart, and fishing windows for that day.</div>
+      <div class="small muted">Pick a date. The app loads forecast for that day, then builds tiles, wind chart, and fishing windows.</div>
 
       <div style="margin-top:12px;">
         <div class="fieldLabel">Date</div>
         <input id="home_date" type="date" />
-        <div id="home_date_note" class="small muted" style="margin-top:6px;"></div>
+        <div class="small muted" style="margin-top:6px;">Forecast availability is usually ~7 to 16 days depending on provider. If your date is outside the forecast, it will say so.</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -1375,7 +1367,7 @@ function renderHome() {
           <button type="button" id="water_small" class="toggleBtn">Small / protected</button>
           <button type="button" id="water_big" class="toggleBtn">Big water / offshore</button>
         </div>
-        <div class="small muted" style="margin-top:8px;">Small water is default. Big water is stricter for wind and temperature risk.</div>
+        <div class="small muted" style="margin-top:8px;">Small water is default. Big water is stricter for wind and cold.</div>
       </div>
 
       <div style="margin-top:12px;">
@@ -1391,14 +1383,21 @@ function renderHome() {
   );
 
   const dateInput = document.getElementById("home_date");
-  const dateNote = document.getElementById("home_date_note");
   const craftSel = document.getElementById("home_craft");
   const btnSmall = document.getElementById("water_small");
   const btnBig = document.getElementById("water_big");
 
-  // Init selected date to today if unset
+  // Default date: today (but user can change)
   if (!isIsoDate(state.dateIso)) state.dateIso = isoTodayLocal();
   dateInput.value = state.dateIso;
+
+  dateInput.addEventListener("change", function () {
+    const v = String(dateInput.value || "").trim();
+    if (isIsoDate(v)) {
+      state.dateIso = v;
+      renderHomeDynamic();
+    }
+  });
 
   craftSel.value = state.craft || "Kayak (paddle)";
 
@@ -1416,53 +1415,40 @@ function renderHome() {
   btnSmall.addEventListener("click", function () {
     state.waterType = "Small / protected";
     paintWaterToggle();
-    renderHomeDynamic("water_change");
+    renderHomeDynamic();
   });
 
   btnBig.addEventListener("click", function () {
     state.waterType = "Big water / offshore";
     paintWaterToggle();
-    renderHomeDynamic("water_change");
+    renderHomeDynamic();
   });
 
   craftSel.addEventListener("change", function () {
     state.craft = craftSel.value;
-    renderHomeDynamic("craft_change");
+    renderHomeDynamic();
   });
 
   // Default small/protected
   if (state.waterType !== "Big water / offshore") state.waterType = "Small / protected";
   paintWaterToggle();
 
-  // Date change should re-render using selected day
-  dateInput.addEventListener("change", function () {
-    const v = String(dateInput.value || "").trim();
-    if (isIsoDate(v)) state.dateIso = v;
-    renderHomeDynamic("date_change");
-  });
-
-  // Location picker
-  // - uses saved location if present (handled in render())
-  // - autoGPS only if you want it; here we keep it false to avoid forcing a permission prompt
+  // Location picker (attempt auto GPS on load for Home)
   renderLocationPicker(page, "home", function () {
-    renderHomeDynamic("location_resolved");
-  }, { autoGPS: false });
+    renderHomeDynamic();
+  }, true);
 
   appendHtml(page, `<div id="home_dynamic"></div>`);
 
-  // Auto-refresh on open if location already known
-  renderHomeDynamic("initial");
+  renderHomeDynamic();
 
-  async function renderHomeDynamic(reason) {
+  async function renderHomeDynamic() {
     const dyn = document.getElementById("home_dynamic");
     if (!dyn) return;
 
     dyn.innerHTML = "";
 
-    if (!hasResolvedLocation()) {
-      dateNote.textContent = "Set a location to load a forecast range for date selection.";
-      return;
-    }
+    if (!hasResolvedLocation()) return;
 
     appendHtml(
       dyn,
@@ -1474,12 +1460,17 @@ function renderHome() {
     `
     );
 
+    const chosenIso = isIsoDate(state.dateIso) ? state.dateIso : isoTodayLocal();
+
+    // Use 16-day range (Open-Meteo supports up to 16 for many endpoints)
+    const days = 16;
+
     let wx = null;
     let sun = null;
 
     try {
-      wx = await fetchWeatherWindMulti(state.lat, state.lon);
-      sun = await fetchSunTimesMulti(state.lat, state.lon);
+      wx = await fetchWeatherWindRange(state.lat, state.lon, days);
+      sun = await fetchSunTimesRange(state.lat, state.lon, days);
     } catch (e) {
       dyn.innerHTML =
         '<div class="card"><strong>Could not load data.</strong><div class="small muted">' +
@@ -1489,56 +1480,38 @@ function renderHome() {
     }
 
     const dailyDates = wx && wx.daily && wx.daily.time ? wx.daily.time : [];
+    const idx = dailyDates.indexOf(chosenIso);
+
     if (!dailyDates.length) {
       dyn.innerHTML =
         '<div class="card"><strong>No forecast returned.</strong><div class="small muted">Try again in a moment.</div></div>';
-      dateNote.textContent = "";
       return;
     }
 
-    // Set min/max selectable based on forecast dates
-    const mm = forecastMinMax(dailyDates);
-    if (mm) {
-      dateInput.min = mm.min;
-      dateInput.max = mm.max;
-
-      // Clamp state.dateIso into range if needed
-      const picked = pickForecastIndex(dailyDates, state.dateIso);
-      state.dateIso = picked.iso || dailyDates[0];
-      dateInput.value = state.dateIso;
-
-      dateNote.textContent = "Forecast range: " + mm.min + " to " + mm.max;
-    } else {
-      dateNote.textContent = "";
-      // Still try best pick
-      const picked2 = pickForecastIndex(dailyDates, state.dateIso);
-      state.dateIso = picked2.iso || dailyDates[0];
-      dateInput.value = state.dateIso;
+    if (idx < 0) {
+      dyn.innerHTML =
+        '<div class="card"><strong>Date not available in forecast.</strong>' +
+        '<div class="small muted">Try a date within the next ' +
+        escHtml(String(dailyDates.length)) +
+        " days.</div></div>";
+      return;
     }
 
-    // Find selected day index
-    const picked = pickForecastIndex(dailyDates, state.dateIso);
-    const useIdx = picked.idx;
-    const useIso = picked.iso || dailyDates[useIdx] || state.dateIso;
+    const tmin = safeNum(wx.daily.tmin[idx], 0);
+    const tmax = safeNum(wx.daily.tmax[idx], 0);
 
-    state.dateIso = useIso;
-    dateInput.value = useIso;
+    // precipitation_probability_max can be null; show "None" if null/undefined/not finite
+    const rawPop = wx.daily.popMax[idx];
+    const hasPop = rawPop !== null && rawPop !== undefined && rawPop !== "" && Number.isFinite(Number(rawPop));
+    const popMax = hasPop ? safeNum(rawPop, 0) : null;
 
-    // Read values
-    const tmin = safeNum(wx.daily.tmin[useIdx], 0);
-    const tmax = safeNum(wx.daily.tmax[useIdx], 0);
+    const windMax = safeNum(wx.daily.windMax[idx], 0);
+    const gustMax = safeNum(wx.daily.gustMax[idx], 0);
 
-    // Precip can be missing (null / undefined / NaN). If so, show "None".
-    const popRaw = wx.daily.popMax[useIdx];
-    const popNum = Number(popRaw);
-    const popIsNum = Number.isFinite(popNum);
-    const popLabel = popIsNum ? String(Math.round(popNum)) + " %" : "None";
-
-    const windMax = safeNum(wx.daily.windMax[useIdx], 0);
-    const gustMax = safeNum(wx.daily.gustMax[useIdx], 0);
-
-    const sunFor = sunForDate(sun, useIso);
+    const sunFor = sunForDate(sun, chosenIso);
     const windows = sunFor ? computeBestFishingWindows(sunFor.sunrise, sunFor.sunset) : [];
+
+    const seed = String(chosenIso) + "|" + String(state.placeLabel || "") + "|" + String(state.lat) + "|" + String(state.lon);
 
     const status = computeGoStatus({
       craft: state.craft,
@@ -1546,8 +1519,12 @@ function renderHome() {
       windMax: windMax,
       gustMax: gustMax,
       tmin: tmin,
-      tmax: tmax
+      tmax: tmax,
+      seed: seed
     });
+
+    const remark = pickFunnyRemark(seed);
+    const safetyLine = status.safetyBits.length ? status.safetyBits.join(" ") : "";
 
     const tips = computeExposureTips({
       tmin: tmin,
@@ -1556,8 +1533,7 @@ function renderHome() {
       gustMax: gustMax
     });
 
-    // Hourly points: use hourly wind for the chosen date
-    const pointsRaw = filterHourlyToDate(wx.hourly.time || [], wx.hourly.wind || [], useIso);
+    const pointsRaw = filterHourlyToDate(wx.hourly.time || [], wx.hourly.wind || [], chosenIso);
     const points = [];
     for (let i = 0; i < pointsRaw.length; i++) {
       if (i % 2 === 0) points.push({ dt: pointsRaw[i].dt, mph: safeNum(pointsRaw[i].v, 0) });
@@ -1570,11 +1546,13 @@ function renderHome() {
 
     dyn.innerHTML = "";
 
+    const popHtml = popMax === null ? "None" : escHtml(String(Math.round(popMax)) + " %");
+
     appendHtml(
       dyn,
       `
       <div class="card">
-        <h3>Overview - ${escHtml(useIso)}</h3>
+        <h3>Overview - ${escHtml(chosenIso)}</h3>
 
         <div class="tilesGrid">
           <div class="tile">
@@ -1585,8 +1563,8 @@ function renderHome() {
 
           <div class="tile">
             <div class="tileTop">Rain chance (max)</div>
-            <div class="tileVal">${escHtml(popLabel)}</div>
-            <div class="tileSub">Peak probability</div>
+            <div class="tileVal">${popHtml}</div>
+            <div class="tileSub">${popMax === null ? "No precip data" : "Peak probability"}</div>
           </div>
 
           <div class="tile">
@@ -1616,7 +1594,9 @@ function renderHome() {
           <div class="meterNeedle" id="meter_needle" style="left:${escHtml(String(status.needlePct))}%;"></div>
         </div>
 
-        <div class="small muted" style="margin-top:8px;">${escHtml(status.message)}</div>
+        <div class="small muted" style="margin-top:10px;">
+          ${escHtml(remark)}${safetyLine ? " " + escHtml(safetyLine) : ""}
+        </div>
       </div>
     `
     );
@@ -1657,7 +1637,7 @@ function renderHome() {
             );
           })
           .join("")
-      : "<li>No sunrise/sunset data for that date.</li>";
+      : "<li>No sunrise/sunset data for this date in the forecast window.</li>";
 
     appendHtml(
       dyn,
@@ -1680,7 +1660,6 @@ function renderHome() {
     `
     );
 
-    // Redraw chart on resize
     let resizeTimer = null;
     window.addEventListener("resize", function () {
       if (!document.getElementById("wind_canvas")) return;
@@ -1731,7 +1710,7 @@ function renderDepthCalculator() {
       </div>
 
       <div style="margin-top:12px;">
-        <button id="dc_calc" type="button">Calculate</button>
+        <button id="dc_calc">Calculate</button>
       </div>
 
       <div id="dc_out" class="card compact" style="margin-top:12px; display:none;"></div>
@@ -1769,71 +1748,123 @@ function renderSpeciesTips() {
   const page = pageEl();
 
   const tips = [
-    { name: "Largemouth Bass", range: "55 to 75 F (most active)", bullets: [
-      "Topwater early and late when water is warm enough.",
-      "Midday: work edges, docks, and weed lines with jigs and plastics.",
-      "Cold fronts: slow down with finesse and target deeper transitions."
-    ]},
-    { name: "Smallmouth Bass", range: "50 to 70 F (most active)", bullets: [
-      "Wind can improve the bite on rocky points and flats.",
-      "Use jigs, tubes, jerkbaits, and small swimbaits.",
-      "In cold water, slow down and stay close to bottom structure."
-    ]},
-    { name: "Trout (rainbow)", range: "45 to 65 F (most active)", bullets: [
-      "Troll early for consistent action, then switch to casting near inlets.",
-      "If sun is high, target deeper water or shaded banks.",
-      "Match speed and lure size to water clarity and forage."
-    ]},
-    { name: "Kokanee", range: "45 to 60 F (best comfort)", bullets: [
-      "Early light is prime. Troll slow with small dodger + spinner or hoochie.",
-      "Use scent and tune speed until you see consistent strikes.",
-      "If marks are deep, use heavier weight or downrigger to stay on the school."
-    ]},
-    { name: "Chinook Salmon", range: "42 to 58 F (typical target water)", bullets: [
-      "Troll bait or flasher + hoochie; keep speed steady and turns wide.",
-      "Fish the temperature band and the bait: adjust depth until you see action.",
-      "In wind, stay conservative and prioritize a safe return route."
-    ]},
-    { name: "Coho Salmon", range: "45 to 60 F", bullets: [
-      "Coho often respond to faster presentations than Chinook.",
-      "Cover water: troll or cast in travel lanes and near current seams.",
-      "Bright/flashy presentations can shine in stained water."
-    ]},
-    { name: "Sockeye", range: "45 to 60 F", bullets: [
-      "Use legal methods for your water (often specialized; check regs).",
-      "Target travel corridors and keep presentation consistent.",
-      "If you see fish rolling, adjust depth and speed rather than lure size."
-    ]},
-    { name: "Walleye", range: "50 to 70 F", bullets: [
-      "Low light: troll crankbaits or run spinners on edges and flats.",
-      "Daytime: jig transitions and humps; slow down when bite is light.",
-      "Wind can help: position so you can work structure without drifting too fast."
-    ]},
-    { name: "Yellow Perch", range: "45 to 70 F", bullets: [
-      "Small jigs and bait shine. Keep it near bottom.",
-      "If you catch one, stay put; perch school up tight.",
-      "Light line and subtle motion usually outperforms aggressive jigging."
-    ]},
-    { name: "Crappie", range: "55 to 75 F", bullets: [
-      "Look for brush, docks, and protected bays.",
-      "Slow vertical presentations and small plastics work well.",
-      "On cold fronts, go deeper and slow way down."
-    ]},
-    { name: "Northern Pike", range: "45 to 70 F", bullets: [
-      "Edges of weeds and points are key. Cover water with larger baits.",
-      "Steel/fluoro leader helps prevent bite-offs.",
-      "Handle carefully and keep fingers away from gills/teeth."
-    ]},
-    { name: "Lake Trout (Mackinaw)", range: "40 to 55 F (cold water)", bullets: [
-      "Focus deep structure: humps, drop-offs, and basin edges.",
-      "Troll or jig where you see marks; speed changes can trigger bites.",
-      "Keep your offering in the zone longer rather than racing around."
-    ]},
-    { name: "Catfish (Channel/Bullhead)", range: "55 to 75 F", bullets: [
-      "Evening/night can be best. Anchor or drift edges and flats.",
-      "Stink baits, cut bait, and worms are consistent producers.",
-      "On light bites, keep hooks sharp and give fish time to load up."
-    ]}
+    {
+      name: "Largemouth Bass",
+      range: "55 to 75 F (most active)",
+      bullets: [
+        "Topwater early and late when water is warm enough.",
+        "Midday: work edges, docks, and weed lines with jigs and plastics.",
+        "Cold fronts: slow down with finesse and target deeper transitions."
+      ]
+    },
+    {
+      name: "Smallmouth Bass",
+      range: "50 to 70 F (most active)",
+      bullets: [
+        "Wind can improve the bite on rocky points and flats.",
+        "Use jigs, tubes, jerkbaits, and small swimbaits.",
+        "In cold water, slow down and stay close to bottom structure."
+      ]
+    },
+    {
+      name: "Trout (rainbow)",
+      range: "45 to 65 F (most active)",
+      bullets: [
+        "Troll early for consistent action, then switch to casting near inlets.",
+        "If sun is high, target deeper water or shaded banks.",
+        "Match speed and lure size to water clarity and forage."
+      ]
+    },
+    {
+      name: "Kokanee",
+      range: "45 to 60 F (best comfort)",
+      bullets: [
+        "Early light is prime. Troll slow with small dodger + spinner or hoochie.",
+        "Use scent and tune speed until you see consistent strikes.",
+        "If marks are deep, use heavier weight or downrigger to stay on the school."
+      ]
+    },
+    {
+      name: "Chinook Salmon",
+      range: "42 to 58 F (typical target water)",
+      bullets: [
+        "Troll bait or flasher + hoochie; keep speed steady and turns wide.",
+        "Fish the temperature band and the bait: adjust depth until you see action.",
+        "In wind, stay conservative and prioritize a safe return route."
+      ]
+    },
+    {
+      name: "Coho Salmon",
+      range: "45 to 60 F",
+      bullets: [
+        "Coho often respond to faster presentations than Chinook.",
+        "Cover water: troll or cast in travel lanes and near current seams.",
+        "Bright/flashy presentations can shine in stained water."
+      ]
+    },
+    {
+      name: "Sockeye",
+      range: "45 to 60 F",
+      bullets: [
+        "Use legal methods for your water (often specialized; check regs).",
+        "Target travel corridors and keep presentation consistent.",
+        "If you see fish rolling, adjust depth and speed rather than lure size."
+      ]
+    },
+    {
+      name: "Walleye",
+      range: "50 to 70 F",
+      bullets: [
+        "Low light: troll crankbaits or run spinners on edges and flats.",
+        "Daytime: jig transitions and humps; slow down when bite is light.",
+        "Wind can help: position so you can work structure without drifting too fast."
+      ]
+    },
+    {
+      name: "Yellow Perch",
+      range: "45 to 70 F",
+      bullets: [
+        "Small jigs and bait shine. Keep it near bottom.",
+        "If you catch one, stay put; perch school up tight.",
+        "Light line and subtle motion usually outperforms aggressive jigging."
+      ]
+    },
+    {
+      name: "Crappie",
+      range: "55 to 75 F",
+      bullets: [
+        "Look for brush, docks, and protected bays.",
+        "Slow vertical presentations and small plastics work well.",
+        "On cold fronts, go deeper and slow way down."
+      ]
+    },
+    {
+      name: "Northern Pike",
+      range: "45 to 70 F",
+      bullets: [
+        "Edges of weeds and points are key. Cover water with larger baits.",
+        "Steel/fluoro leader helps prevent bite-offs.",
+        "Handle carefully and keep fingers away from gills/teeth."
+      ]
+    },
+    {
+      name: "Lake Trout (Mackinaw)",
+      range: "40 to 55 F (cold water)",
+      bullets: [
+        "Focus deep structure: humps, drop-offs, and basin edges.",
+        "Troll or jig where you see marks; speed changes can trigger bites.",
+        "Keep your offering in the zone longer rather than racing around."
+      ]
+    },
+    {
+      name: "Catfish (Channel/Bullhead)",
+      range: "55 to 75 F",
+      bullets: [
+        "Evening/night can be best. Anchor or drift edges and flats.",
+        "Stink baits, cut bait, and worms are consistent producers.",
+        "On light bites, keep hooks sharp and give fish time to load up."
+      ]
+    }
   ];
 
   appendHtml(
@@ -1896,8 +1927,8 @@ function renderSpeedometer() {
       <div class="small muted">GPS-based speed. Requires location permission. Best used outside.</div>
 
       <div class="btnRow" style="margin-top:12px;">
-        <button id="spd_start" type="button">Start</button>
-        <button id="spd_stop" type="button" disabled>Stop</button>
+        <button id="spd_start">Start</button>
+        <button id="spd_stop" disabled>Stop</button>
       </div>
 
       <div class="card compact" style="margin-top:12px;">
@@ -1967,7 +1998,6 @@ function render() {
 
   renderConsentBannerIfNeeded();
 
-  // Restore last location on open so Home can auto-refresh without user tapping anything.
   if (!hasResolvedLocation()) {
     const last = loadLastLocation();
     if (last) setResolvedLocation(last.lat, last.lon, last.label || "");
@@ -1995,6 +2025,7 @@ document.addEventListener("DOMContentLoaded", function () {
   app = document.getElementById("app");
 
   state.tool = "Home";
+
   if (!isIsoDate(state.dateIso)) state.dateIso = isoTodayLocal();
 
   try {

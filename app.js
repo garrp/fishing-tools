@@ -1,7 +1,7 @@
 // ============================
-// app.js (PART 1 OF 4) BEGIN
+// app.js (PART 1 OF 3) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.1.3
+// Version 1.2.1
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -14,16 +14,13 @@
     <main id="app"></main>
     <script src="app.js" defer></script>
 
-  Changes in this build:
-  - Depth calculator: adds Line type (Mono / Fluoro / Braid) and factors it into depth estimate.
-  - Home status message: replaces the plain message with 5 funny reasons per GO/CAUTION/NO-GO.
-    Deterministic pick (stable per date + location + craft + water) so it does not flicker.
-    Still appends cold warnings when needed.
-  - Fixes water toggle highlight bug (JS now uses the CSS class: toggleActive).
-  - Improved cold/caution logic: ~43F days should be at least CAUTION (implemented in PART 3).
+  Changes in this build (v1.2.1):
+  - Exposure tips now explicitly match the SELECTED DAY weather (temp, wind, gust, rain chance).
+  - Adds a safety disclaimer modal (acknowledge + optional do-not-show-again).
+  - Keeps 120 Rule layer in GO/CAUTION/NO-GO logic (kayak-first).
 */
 
-const APP_VERSION = "1.1.3";
+const APP_VERSION = "1.2.1";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -128,6 +125,101 @@ function renderConsentBannerIfNeeded() {
       setConsent("denied");
       removeConsentBanner();
     });
+}
+
+// ----------------------------
+// Safety disclaimer modal
+// ----------------------------
+const DISCLAIMER_ACK_KEY = "fishynw_disclaimer_ack_v1_2_1"; // "ack"
+const DISCLAIMER_SESSION_KEY = "fishynw_disclaimer_session_v1_2_1"; // "shown"
+
+function getLocal(key) {
+  try {
+    return localStorage.getItem(key) || "";
+  } catch (e) {
+    return "";
+  }
+}
+
+function setLocal(key, val) {
+  try {
+    localStorage.setItem(key, val);
+  } catch (e) {
+    // ignore
+  }
+}
+
+function getSession(key) {
+  try {
+    return sessionStorage.getItem(key) || "";
+  } catch (e) {
+    return "";
+  }
+}
+
+function setSession(key, val) {
+  try {
+    sessionStorage.setItem(key, val);
+  } catch (e) {
+    // ignore
+  }
+}
+
+function removeDisclaimerModal() {
+  const el = document.getElementById("disclaimer_overlay");
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+}
+
+function showDisclaimerIfNeeded() {
+  // If user checked "do not show again"
+  if (getLocal(DISCLAIMER_ACK_KEY) === "ack") return;
+
+  // Do not show repeatedly in the same tab session
+  if (getSession(DISCLAIMER_SESSION_KEY) === "shown") return;
+
+  // Already open?
+  if (document.getElementById("disclaimer_overlay")) return;
+
+  setSession(DISCLAIMER_SESSION_KEY, "shown");
+
+  const overlay = document.createElement("div");
+  overlay.id = "disclaimer_overlay";
+  overlay.className = "modalOverlay";
+
+  overlay.innerHTML =
+    '<div class="modalCard" role="dialog" aria-modal="true" aria-label="Safety disclaimer">' +
+    '  <div class="modalHead">Safety disclaimer</div>' +
+    '  <div class="modalBody">' +
+    "    <p>This tool is for general planning only. Forecasts can be wrong and conditions can change fast.</p>" +
+    "    <p>You are responsible for your own decisions. Use your own judgment before going out, and prioritize safety.</p>" +
+    "    <p>If conditions feel off, do not go. If you go, stay conservative and keep a safe return route.</p>" +
+    '  </div>' +
+    '  <div class="modalFoot">' +
+    '    <div class="modalRow">' +
+    '      <label class="modalCheck"><input id="disc_never" type="checkbox"> Do not show this again</label>' +
+    '    </div>' +
+    '    <div class="modalBtnRow">' +
+    '      <button id="disc_ok" type="button">I understand</button>' +
+    "    </div>" +
+    '    <div class="small muted" style="margin-top:8px;">Not medical, legal, or safety advice. Always follow local regulations and wear appropriate safety gear.</div>' +
+    "  </div>" +
+    "</div>";
+
+  document.body.appendChild(overlay);
+
+  // Close on button
+  document.getElementById("disc_ok").addEventListener("click", function () {
+    const never = document.getElementById("disc_never");
+    if (never && never.checked) setLocal(DISCLAIMER_ACK_KEY, "ack");
+    removeDisclaimerModal();
+  });
+
+  // Close if user clicks outside the card
+  overlay.addEventListener("click", function (e) {
+    if (e && e.target === overlay) {
+      removeDisclaimerModal();
+    }
+  });
 }
 
 // ----------------------------
@@ -385,6 +477,60 @@ let app = null;
   }
   .consentDecline:hover { background: #ee8f8f !important; }
 
+  /* Disclaimer modal */
+  .modalOverlay {
+    position: fixed;
+    left: 0; right: 0; top: 0; bottom: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .modalCard {
+    width: 100%;
+    max-width: 560px;
+    border-radius: 16px;
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.18);
+    box-shadow: 0 10px 28px rgba(0,0,0,0.25);
+    overflow: hidden;
+  }
+  .modalHead {
+    padding: 14px 14px 10px 14px;
+    background: rgba(0,0,0,0.03);
+    border-bottom: 1px solid rgba(0,0,0,0.10);
+    font-weight: 900;
+  }
+  .modalBody {
+    padding: 14px;
+    font-size: 14px;
+    line-height: 18px;
+    color: rgba(0,0,0,0.82);
+  }
+  .modalBody p { margin: 0 0 10px 0; }
+  .modalFoot {
+    padding: 12px 14px 14px 14px;
+    border-top: 1px solid rgba(0,0,0,0.10);
+  }
+  .modalRow {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .modalCheck {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+    color: rgba(0,0,0,0.75);
+  }
+  .modalBtnRow { display:flex; gap:10px; margin-top: 10px; }
+  .modalBtnRow > button { flex: 1; }
+
   @media (max-width: 520px) {
     .wrap { padding: 10px 10px 30px 10px; }
     .header { flex-direction: column; align-items:center; justify-content:center; gap:8px; }
@@ -582,12 +728,12 @@ function niceErr(e) {
 }
 
 // ============================
-// app.js (PART 1 OF 4) END
+// app.js (PART 1 OF 3) END
 // ============================
 // ============================
-// app.js (PART 2 OF 4) BEGIN
+// app.js (PART 2 OF 3) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.1.3
+// Version 1.2.1
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -748,9 +894,7 @@ const forecastCache = {
 const FORECAST_TTL_MS = 10 * 60 * 1000;
 
 function cacheKey(lat, lon) {
-  return (
-    String(Number(lat).toFixed(4)) + "," + String(Number(lon).toFixed(4))
-  );
+  return String(Number(lat).toFixed(4)) + "," + String(Number(lon).toFixed(4));
 }
 
 async function getForecastBundle(lat, lon) {
@@ -852,11 +996,7 @@ function drawWindLineChart(canvas, points) {
   const yBot = minV;
 
   ctx.fillText(String(Math.round(yTop)) + " mph", 6, padT + 12);
-  ctx.fillText(
-    String(Math.round(yMid)) + " mph",
-    6,
-    padT + h / 2 + 4
-  );
+  ctx.fillText(String(Math.round(yMid)) + " mph", 6, padT + h / 2 + 4);
   ctx.fillText(String(Math.round(yBot)) + " mph", 6, padT + h + 4);
 
   ctx.strokeStyle = "rgba(7,27,31,0.75)";
@@ -970,6 +1110,9 @@ function pageEl() {
 
 // ----------------------------
 // UI: Location Picker (reusable)
+// - NO clear saved location button
+// - auto-clears saved location if user edits the box
+// - optional auto GPS on mount (only when no saved location)
 // ----------------------------
 function renderLocationPicker(container, placeKey, onResolved, opts) {
   const options = opts || {};
@@ -981,7 +1124,8 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     <div class="card">
       <h3>Location</h3>
       <input id="${placeKey}_place" type="text"
-        placeholder="Example: Spokane, WA or 99201 or Hauser Lake" />
+        placeholder="Example: Spokane, WA or 99201 or Hauser Lake"
+        style="width:100%;" />
 
       <div class="btnRow">
         <button id="${placeKey}_search">Search place</button>
@@ -1011,23 +1155,27 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     }
   }
 
+  // Restore existing
   if (hasResolvedLocation()) {
     placeInput.value = state.placeLabel ? state.placeLabel : "";
     renderUsing();
   }
 
+  // Auto-clear saved location as soon as user edits the input away from the saved label.
   placeInput.addEventListener("input", function () {
     const raw = String(placeInput.value || "");
     const val = raw.trim();
 
     if (hasResolvedLocation()) {
       const currentLabel = String(state.placeLabel || "").trim();
+
       if (val && val !== currentLabel) {
         clearResolvedLocation();
         matchesEl.innerHTML = "";
         usingEl.textContent = "";
         if (typeof onResolved === "function") onResolved("auto_cleared_by_typing");
       }
+
       if (!val) {
         clearResolvedLocation();
         matchesEl.innerHTML = "";
@@ -1039,7 +1187,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
 
   function doGps() {
     if (!navigator.geolocation) {
-      usingEl.textContent = "Geolocation not supported.";
+      usingEl.textContent = "Geolocation not supported on this device/browser.";
       return;
     }
 
@@ -1145,6 +1293,8 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     usingEl.textContent = "";
   });
 
+  // AUTO GPS ON MOUNT:
+  // Only if requested AND no resolved location already exists.
   if (autoGps && !hasResolvedLocation()) {
     setTimeout(function () {
       if (!hasResolvedLocation()) doGps();
@@ -1153,12 +1303,12 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
 }
 
 // ============================
-// app.js (PART 2 OF 4) END
+// app.js (PART 2 OF 3) END
 // ============================
 // ============================
-// app.js (PART 3 OF 4) BEGIN
+// app.js (PART 3 OF 3) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.1.3
+// Version 1.2.1
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -1233,10 +1383,66 @@ function pickFunnyReason(label, seedStr) {
 }
 
 // ----------------------------
-// Better caution logic:
-// - Your note: "43 deserves caution"
-//   We add a dedicated "caution floor" band for cold air/water risk.
-//   If average temp is cold enough, we force at least CAUTION even if wind is calm.
+// 120 RULE (heat + wind) + cold penalties
+// ----------------------------
+function compute120RuleLabel(inputs) {
+  const craft = inputs.craft || "Kayak (paddle)";
+  const water = inputs.waterType || "Small / protected";
+
+  const tmin = safeNum(inputs.tmin, 40);
+  const tmax = safeNum(inputs.tmax, 55);
+  const windMax = safeNum(inputs.windMax, 0);
+  const gustMax = safeNum(inputs.gustMax, windMax);
+
+  const heatIndex = tmax + windMax;
+  const gustIndex = tmax + gustMax;
+
+  let goLimit = 105;
+  let noGoLimit = 125;
+
+  if (water === "Big water / offshore") {
+    goLimit -= 5;
+    noGoLimit -= 5;
+  }
+
+  if (craft === "Kayak (motorized)") {
+    goLimit += 2;
+    noGoLimit += 2;
+  } else if (craft === "Boat (small)") {
+    goLimit += 5;
+    noGoLimit += 5;
+  }
+
+  const effIndex = Math.max(heatIndex, gustIndex);
+
+  let label = "GO";
+  if (effIndex >= noGoLimit) label = "NO-GO";
+  else if (effIndex >= goLimit) label = "CAUTION";
+
+  const avgF = (tmin + tmax) / 2;
+
+  let forceAtLeastCaution = false;
+  let forceNoGo = false;
+
+  if (tmax <= 43) forceAtLeastCaution = true;
+  if (tmin <= 35 && windMax >= 8) forceAtLeastCaution = true;
+  if (tmin <= 20 || avgF <= 25) forceNoGo = true;
+
+  if (forceNoGo) label = "NO-GO";
+  else if (forceAtLeastCaution && label === "GO") label = "CAUTION";
+
+  return {
+    label: label,
+    effIndex: effIndex,
+    heatIndex: heatIndex,
+    gustIndex: gustIndex,
+    goLimit: goLimit,
+    noGoLimit: noGoLimit
+  };
+}
+
+// ----------------------------
+// GO/CAUTION/NO-GO meter score
 // ----------------------------
 function computeGoStatus(inputs) {
   const craft = inputs.craft || "Kayak (paddle)";
@@ -1247,7 +1453,6 @@ function computeGoStatus(inputs) {
   const tmax = safeNum(inputs.tmax, 55);
   const avgF = (tmin + tmax) / 2;
 
-  // Wind/gust thresholds
   let goWind = 10;
   let cautionWind = 14;
   let nogoWind = 18;
@@ -1256,7 +1461,6 @@ function computeGoStatus(inputs) {
   let cautionGust = 22;
   let nogoGust = 28;
 
-  // Craft adjustments
   if (craft === "Kayak (motorized)") {
     goWind += 2;
     cautionWind += 2;
@@ -1273,7 +1477,6 @@ function computeGoStatus(inputs) {
     nogoGust += 4;
   }
 
-  // Big water stricter
   if (water === "Big water / offshore") {
     goWind -= 3;
     cautionWind -= 3;
@@ -1293,53 +1496,39 @@ function computeGoStatus(inputs) {
   const sWind = scoreFromThresholds(windMax, goWind, cautionWind, nogoWind);
   const sGust = scoreFromThresholds(gustMax, goGust, cautionGust, nogoGust);
 
-  // Start score from worst of wind/gust
-  let score = Math.max(sWind, sGust);
+  const r120 = compute120RuleLabel({
+    craft: craft,
+    waterType: water,
+    tmin: tmin,
+    tmax: tmax,
+    windMax: windMax,
+    gustMax: gustMax
+  });
 
-  // ----------------------------
-  // Cold risk model (new)
-  // - Treat cold as a "floor" on risk so 43F does not show GO by default.
-  // - Uses avg temp primarily, with a small wind amplifier (wind chills and water consequence).
-  //
-  // Bands (avgF):
-  //   >= 55: no cold floor
-  //   50-54: mild cold -> small floor
-  //   45-49: moderate cold -> CAUTION floor
-  //   40-44: stronger -> higher CAUTION floor
-  //   < 40: approach NO-GO depending on wind
-  // ----------------------------
-  let coldFloor = 0;
+  function scoreFrom120(idx, goLimit, noGoLimit) {
+    const g = Number(goLimit);
+    const n = Number(noGoLimit);
+    const x = Number(idx);
 
-  if (avgF < 55) {
-    // Wind amplifier: a little extra risk above 5 mph
-    const windAmp = Math.max(0, windMax - 5) * 0.8;
-
-    if (avgF >= 50) coldFloor = 18 + windAmp;          // still often GO, but nudges
-    else if (avgF >= 45) coldFloor = 35 + windAmp;     // forces at least CAUTION (your 43-49 concern)
-    else if (avgF >= 40) coldFloor = 45 + windAmp;     // firm CAUTION
-    else coldFloor = 65 + windAmp;                     // strong risk, can become NO-GO
-
-    // Big water increases cold consequence
-    if (water === "Big water / offshore") coldFloor += 8;
-
-    // Kayak paddle is most exposed; small bump
-    if (craft === "Kayak (paddle)") coldFloor += 4;
-
-    // Cap to sane range
-    coldFloor = Math.max(0, Math.min(100, coldFloor));
+    if (x <= g) {
+      const t = x / Math.max(1, g);
+      return Math.max(0, Math.min(34, t * 34));
+    }
+    if (x >= n) {
+      const over = x - n;
+      return Math.max(75, Math.min(100, 75 + over * 1.4));
+    }
+    const t2 = (x - g) / Math.max(1, n - g);
+    return 35 + t2 * 39;
   }
 
-  // Combine: enforce the floor
-  score = Math.max(score, coldFloor);
+  const s120 = scoreFrom120(r120.effIndex, r120.goLimit, r120.noGoLimit);
 
-  // Hard cold gates (kept, slightly tightened)
-  let forceAtLeastCaution = false;
-  let forceNoGo = false;
+  let score = Math.max(sWind, sGust, s120);
 
-  // Your previous logic used highF <= 30 to force caution and lowF <= 20 or avg <= 22 for no-go.
-  // Keep those and add a more practical "cold water consequence" floor:
-  if (avgF <= 49) forceAtLeastCaution = true; // ensures 43 reads CAUTION minimum
-  if (tmin <= 28 || avgF <= 35) forceNoGo = true;
+  const chillPenalty =
+    Math.max(0, 35 - avgF) * 0.6 + Math.max(0, windMax - 5) * 0.4;
+  if (avgF < 45) score += Math.min(18, chillPenalty);
 
   score = Math.max(0, Math.min(100, score));
 
@@ -1347,17 +1536,24 @@ function computeGoStatus(inputs) {
   if (score >= 70) label = "NO-GO";
   else if (score >= 35) label = "CAUTION";
 
+  if (r120.label === "NO-GO") label = "NO-GO";
+  else if (r120.label === "CAUTION" && label === "GO") label = "CAUTION";
+
+  let forceAtLeastCaution = false;
+  let forceNoGo = false;
+
+  if (tmax <= 30) forceAtLeastCaution = true;
+  if (tmin <= 20 || avgF <= 22) forceNoGo = true;
+
   if (forceNoGo) label = "NO-GO";
   else if (forceAtLeastCaution && label === "GO") label = "CAUTION";
 
-  // Keep needle and label aligned
   if (label === "NO-GO") score = Math.max(score, 75);
   else if (label === "CAUTION") score = Math.max(score, 45);
   else score = Math.min(score, 34);
 
   const needlePct = Math.max(0, Math.min(100, score));
 
-  // Deterministic seed so it stays the same for a given situation/date
   const seedStr =
     String(inputs.seed || "") +
     "|" +
@@ -1373,49 +1569,191 @@ function computeGoStatus(inputs) {
     "|" +
     String(Math.round(tmin)) +
     "|" +
-    String(Math.round(tmax));
+    String(Math.round(tmax)) +
+    "|" +
+    "idx" +
+    String(Math.round(r120.effIndex));
 
   let msg = pickFunnyReason(label, seedStr);
 
-  // Append serious cold warnings (short, but clear)
-  if (avgF <= 49 && label !== "NO-GO") {
-    msg += " Cold air/water increases consequence. Dress for immersion and stay conservative.";
+  if (label !== "GO") {
+    msg +=
+      " (120 rule: " +
+      String(Math.round(r120.effIndex)) +
+      " = temp " +
+      String(Math.round(tmax)) +
+      " + wind " +
+      String(Math.round(windMax)) +
+      ".)";
   }
-  if (forceNoGo) {
+
+  if (tmax <= 43 && label !== "NO-GO") {
+    msg += " Cold air increases consequence. Dress for immersion, not just air temp.";
+  }
+  if (tmin <= 20 || avgF <= 22) {
     msg += " Extreme cold can turn a minor issue into an emergency quickly.";
   }
 
   return { label: label, score: score, needlePct: needlePct, message: msg };
 }
 
+// ----------------------------
+// Exposure tips: match the selected day's weather
+// (Driven by tmin/tmax, wind/gust, precip probability)
+// ----------------------------
 function computeExposureTips(inputs) {
   const tmin = safeNum(inputs.tmin, 40);
   const tmax = safeNum(inputs.tmax, 55);
   const windMax = safeNum(inputs.windMax, 0);
   const gustMax = safeNum(inputs.gustMax, windMax);
 
+  const popRaw = inputs.popMax;
+  const popIsFinite = Number.isFinite(Number(popRaw));
+  const popMax = popIsFinite ? safeNum(popRaw, 0) : null;
+
   const avgF = (tmin + tmax) / 2;
   const tips = [];
 
-  tips.push("Sunscreen matters even on cloudy days. Reapply and protect lips.");
-  tips.push("Bring a dry bag with a spare layer and gloves. Keep keys/phone in a waterproof pouch.");
-
-  if (avgF <= 50) {
-    tips.unshift("Avoid cotton layers. Use synthetics or wool that insulate when wet.");
-    tips.unshift("Cold air and likely cold water: lean toward a dry suit or a proper wet suit setup.");
-    if (avgF <= 40) tips.unshift("Neoprene gloves/boots help. Limit exposure time and keep shore close.");
+  // Precip specific
+  if (popIsFinite && popMax >= 60) {
+    tips.push("High rain chance. Bring a real rain shell and keep spare clothes in a dry bag.");
+    tips.push("Waterproof phone case and towel in the hatch can save the day.");
+  } else if (popIsFinite && popMax >= 30) {
+    tips.push("Spotty showers possible. Pack a light rain layer and keep gear covered.");
+  } else if (popIsFinite && popMax <= 10) {
+    tips.push("Low rain chance. Still plan for spray and surprise weather.");
+  } else {
+    tips.push("Precip data may be unavailable. Assume conditions can change and pack a light shell.");
   }
 
-  if (tmax >= 78) {
-    tips.unshift("Hot day: wear sun shirts and light, sun-repellent clothing. Use a wide-brim hat.");
-    tips.unshift("Hydrate early. Bring more water than you think you need.");
+  // Wind specific
+  if (windMax >= 18 || gustMax >= 28) {
+    tips.push("Strong wind/gusts: stay close to shore and avoid long open-water crossings.");
+    tips.push("Leash the paddle, net, and rods. A gust can yeet gear instantly.");
+  } else if (windMax >= 12 || gustMax >= 20) {
+    tips.push("Breezy day: plan a protected return route and expect wind shifts.");
+    tips.push("Keep your bow into waves when possible. Avoid getting broadside in gusts.");
+  } else {
+    tips.push("Wind looks manageable. Still check conditions at the launch before committing.");
   }
 
-  if (windMax >= 12 || gustMax >= 20) {
-    tips.push("Wind can spike fast. Leash key gear and plan a protected return route.");
+  // Cold/immersion focused
+  if (avgF <= 45) {
+    tips.push("Cold day: dress for immersion, not just air temp. Avoid cotton; use wool/synthetics.");
+    tips.push("Neoprene gloves/boots help. Keep a dry spare layer sealed in a dry bag.");
+    if (tmax <= 43) tips.push("Extra caution: even a short swim can get serious fast in cold water season.");
+  }
+
+  // Hot/heat management
+  if (tmax >= 80) {
+    tips.push("Hot day: hydrate early and bring more water than you think you need.");
+    tips.push("UPF shirt, hat, sunglasses. Reapply sunscreen. Heat reflects off the water.");
+  } else {
+    tips.push("Layer up: mornings can be colder than the afternoon. Bring a removable mid-layer.");
+  }
+
+  // Always useful
+  tips.push("Tell someone your plan and return time. Carry a whistle and a light even if it is daylight.");
+  tips.push("If you are solo, consider a conservative route and a quick exit plan.");
+
+  // If the 120-rule is pushing caution/no-go, add targeted reminder
+  const r120 = compute120RuleLabel({
+    craft: inputs.craft || "Kayak (paddle)",
+    waterType: inputs.waterType || "Small / protected",
+    tmin: tmin,
+    tmax: tmax,
+    windMax: windMax,
+    gustMax: gustMax
+  });
+  if (r120.label !== "GO") {
+    tips.unshift("Today is a " + r120.label + " kind of day in the 120-rule model. Consider shortening the trip and staying protected.");
   }
 
   return tips;
+}
+
+// ----------------------------
+// Disclaimer modal (popup)
+// Shows once per browser, and also available from footer link.
+// ----------------------------
+const DISCLAIMER_KEY = "fishynw_disclaimer_v1"; // "ack"
+
+function hasDisclaimerAck() {
+  try {
+    return localStorage.getItem(DISCLAIMER_KEY) === "ack";
+  } catch (e) {
+    return false;
+  }
+}
+
+function setDisclaimerAck() {
+  try {
+    localStorage.setItem(DISCLAIMER_KEY, "ack");
+  } catch (e) {
+    // ignore
+  }
+}
+
+function openDisclaimerModal(force) {
+  if (!force && hasDisclaimerAck()) return;
+  if (document.getElementById("disclaimer_modal")) return;
+
+  const overlay = document.createElement("div");
+  overlay.id = "disclaimer_modal";
+  overlay.style.position = "fixed";
+  overlay.style.left = "0";
+  overlay.style.top = "0";
+  overlay.style.right = "0";
+  overlay.style.bottom = "0";
+  overlay.style.background = "rgba(0,0,0,0.55)";
+  overlay.style.zIndex = "9998";
+  overlay.style.display = "flex";
+  overlay.style.alignItems = "center";
+  overlay.style.justifyContent = "center";
+  overlay.style.padding = "14px";
+
+  const card = document.createElement("div");
+  card.style.maxWidth = "720px";
+  card.style.width = "100%";
+  card.style.background = "#ffffff";
+  card.style.borderRadius = "16px";
+  card.style.border = "1px solid rgba(0,0,0,0.14)";
+  card.style.boxShadow = "0 10px 30px rgba(0,0,0,0.20)";
+  card.style.padding = "14px";
+
+  card.innerHTML =
+    '<div style="font-weight:900; font-size:18px; margin-bottom:8px;">Disclaimer</div>' +
+    '<div class="small muted" style="line-height:18px;">' +
+    "These tools provide general estimates and weather summaries. Conditions can change fast and forecasts can be wrong. " +
+    "You are responsible for your own safety and decisions. Use your own judgment, check local conditions at the launch, " +
+    "and do not go if you are unsure. Always follow local rules and wear appropriate safety gear." +
+    "</div>" +
+    '<div class="btnRow" style="margin-top:12px;">' +
+    '  <button id="disc_ok" type="button">I understand</button>' +
+    '  <button id="disc_close" type="button" style="background:rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.16); color: rgba(0,0,0,0.78);">Close</button>' +
+    "</div>" +
+    '<div class="small muted" style="margin-top:10px;">Tip: if anything feels off, stay close to shore or pick another day.</div>';
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  function closeModal() {
+    const el = document.getElementById("disclaimer_modal");
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  document.getElementById("disc_ok").addEventListener("click", function () {
+    setDisclaimerAck();
+    closeModal();
+  });
+
+  document.getElementById("disc_close").addEventListener("click", function () {
+    closeModal();
+  });
+
+  overlay.addEventListener("click", function (e) {
+    if (e.target === overlay) closeModal();
+  });
 }
 
 // ----------------------------
@@ -1519,7 +1857,11 @@ function renderHome() {
   renderHomeDynamic("init");
 
   document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "visible" && state.tool === "Home" && hasResolvedLocation()) {
+    if (
+      document.visibilityState === "visible" &&
+      state.tool === "Home" &&
+      hasResolvedLocation()
+    ) {
       renderHomeDynamic("resume_visible");
     }
   });
@@ -1601,7 +1943,8 @@ function renderHome() {
     const tmin = safeNum(wx.daily.tmin[idx], 0);
     const tmax = safeNum(wx.daily.tmax[idx], 0);
 
-    const popRaw = wx.daily.popMax && wx.daily.popMax.length ? wx.daily.popMax[idx] : null;
+    const popRaw =
+      wx.daily.popMax && wx.daily.popMax.length ? wx.daily.popMax[idx] : null;
     const popIsFinite = Number.isFinite(Number(popRaw));
     const popMax = popIsFinite ? safeNum(popRaw, 0) : null;
 
@@ -1632,11 +1975,15 @@ function renderHome() {
       tmax: tmax
     });
 
+    // Exposure tips now match the selected day (includes popMax)
     const tips = computeExposureTips({
+      craft: state.craft,
+      waterType: state.waterType,
       tmin: tmin,
       tmax: tmax,
       windMax: windMax,
-      gustMax: gustMax
+      gustMax: gustMax,
+      popMax: popMax
     });
 
     const pointsRaw = filterHourlyToDate(wx.hourly.time || [], wx.hourly.wind || [], useIso);
@@ -1764,7 +2111,6 @@ function renderHome() {
     `
     );
 
-    // Redraw chart on resize
     let resizeTimer = null;
     window.addEventListener("resize", function () {
       if (!document.getElementById("wind_canvas")) return;
@@ -1777,19 +2123,8 @@ function renderHome() {
   }
 }
 
-// ============================
-// app.js (PART 3 OF 4) END
-// ============================
-// ============================
-// app.js (PART 4 OF 4) BEGIN
-// FishyNW.com - Fishing Tools (Web)
-// Version 1.1.3
-// ASCII ONLY. No Unicode. No smart quotes. No special dashes.
-// ============================
-
 // ----------------------------
 // Depth Calculator
-// - considers LINE TYPE + line test
 // ----------------------------
 function renderDepthCalculator() {
   const page = pageEl();
@@ -1819,10 +2154,10 @@ function renderDepthCalculator() {
           <select id="dc_test">
             <option>10</option>
             <option selected>12</option>
-            <option>15</option>
             <option>20</option>
             <option>25</option>
             <option>30</option>
+            <option>40</option>
           </select>
         </div>
 
@@ -1853,39 +2188,29 @@ function renderDepthCalculator() {
 
   function lineTypeFactor(type) {
     const t = String(type || "").toLowerCase();
-
-    // Higher factor => more drag => less depth
-    // Lower factor => less drag => more depth
     if (t.indexOf("braid") >= 0) return 0.88;
     if (t.indexOf("fluoro") >= 0) return 0.96;
     if (t.indexOf("lead") >= 0) return 0.72;
-    return 1.0;
+    return 1.00;
   }
 
   function lineTestFactor(testLb, lineType) {
     const t = safeNum(testLb, 12);
-
-    // Base diameter/drag factor by test (mono-ish baseline)
-    let f = t <= 10 ? 1.0 : t <= 12 ? 0.95 : t <= 15 ? 0.90 : t <= 20 ? 0.85 : t <= 25 ? 0.80 : 0.76;
+    let f = t <= 10 ? 1.0 : t <= 12 ? 0.95 : t <= 20 ? 0.85 : t <= 25 ? 0.80 : t <= 30 ? 0.76 : 0.72;
 
     const lt = String(lineType || "").toLowerCase();
-
-    // Braid: soften penalty of heavier tests
     if (lt.indexOf("braid") >= 0) {
-      if (t >= 50) f = Math.max(f, 0.86);
-      else if (t >= 40) f = Math.max(f, 0.88);
-      else if (t >= 30) f = Math.max(f, 0.90);
-      else if (t >= 25) f = Math.max(f, 0.92);
-      else if (t >= 20) f = Math.max(f, 0.94);
-      else if (t >= 15) f = Math.max(f, 0.96);
+      if (t >= 40) f = Math.max(f, 0.86);
+      else if (t >= 30) f = Math.max(f, 0.88);
+      else if (t >= 25) f = Math.max(f, 0.90);
+      else if (t >= 20) f = Math.max(f, 0.92);
+      else if (t >= 15) f = Math.max(f, 0.95);
     }
 
-    // Fluoro: close to mono in drag, slightly stiffer (tiny nudge)
     if (lt.indexOf("fluoro") >= 0) {
       f = f * 0.99;
     }
 
-    // Lead core: test number not comparable; reduce impact
     if (lt.indexOf("lead") >= 0) {
       f = 0.90;
     }
@@ -1907,7 +2232,6 @@ function renderDepthCalculator() {
 
     let depth = line * base * speedFactor * dragFactor;
 
-    // cap at 95% of line-out
     depth = Math.max(0, Math.min(depth, line * 0.95));
 
     out.style.display = "block";
@@ -2182,6 +2506,9 @@ function render() {
 
   renderConsentBannerIfNeeded();
 
+  // Show disclaimer popup once per browser session (and also if user opens it)
+  openDisclaimerModal(false);
+
   if (!hasResolvedLocation()) {
     const last = loadLastLocation();
     if (last) setResolvedLocation(last.lat, last.lon, last.label || "");
@@ -2221,5 +2548,5 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 // ============================
-// app.js (PART 4 OF 4) END
+// app.js (PART 3 OF 3) END
 // ============================

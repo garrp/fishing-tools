@@ -1,34 +1,27 @@
 // ============================
-// app.js (PART 1 OF 3) BEGIN
+// app.js (PART 1 OF 4) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.2.1
+// Version 1.2.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
+//
+// NOTES (v1.2.3):
+// - Logo is now a hyperlink to https://fishynw.com (no UI redesign; same header layout).
+// - GO/CAUTION/NO-GO logic: if rain is likely AND temps are cold (rain + under 50F), enforce at least CAUTION.
+// - Species Tips expanded into "encyclopedia" style (kept same UI structure; dropdown + content).
 // ============================
 
 "use strict";
 
-/*
-  Single-file vanilla JS app.
-
-  Expects an index.html with ONE root:
-    <main id="app"></main>
-    <script src="app.js" defer></script>
-
-  Changes in this build (v1.2.1):
-  - Exposure tips now explicitly match the SELECTED DAY weather (temp, wind, gust, rain chance).
-  - Adds a safety disclaimer modal (acknowledge + optional do-not-show-again).
-  - Keeps 120 Rule layer in GO/CAUTION/NO-GO logic (kayak-first).
-*/
-
-const APP_VERSION = "1.2.1";
+const APP_VERSION = "1.2.3";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
+const LOGO_LINK = "https://fishynw.com";
 
 // ----------------------------
 // Analytics consent (GA4)
 // ----------------------------
 const GA4_ID = "G-9R61DE2HLR";
-const CONSENT_KEY = "fishynw_ga_consent_v1"; // "granted" | "denied"
+const CONSENT_KEY = "fishynw_ga_consent_v1_2_3"; // "granted" | "denied"
 let gaLoaded = false;
 
 function getConsent() {
@@ -128,10 +121,12 @@ function renderConsentBannerIfNeeded() {
 }
 
 // ----------------------------
-// Safety disclaimer modal
+// Safety disclaimer modal (single system)
+// - Shows once per browser session unless "Do not show again" is checked.
+// - Also can be opened from footer link (wired later).
 // ----------------------------
-const DISCLAIMER_ACK_KEY = "fishynw_disclaimer_ack_v1_2_1"; // "ack"
-const DISCLAIMER_SESSION_KEY = "fishynw_disclaimer_session_v1_2_1"; // "shown"
+const DISCLAIMER_ACK_KEY = "fishynw_disclaimer_ack_v1_2_3"; // "ack"
+const DISCLAIMER_SESSION_KEY = "fishynw_disclaimer_session_v1_2_3"; // "shown"
 
 function getLocal(key) {
   try {
@@ -170,17 +165,17 @@ function removeDisclaimerModal() {
   if (el && el.parentNode) el.parentNode.removeChild(el);
 }
 
-function showDisclaimerIfNeeded() {
-  // If user checked "do not show again"
-  if (getLocal(DISCLAIMER_ACK_KEY) === "ack") return;
+function openDisclaimerModal(force) {
+  // Force = show even if "do not show again" is set.
+  if (!force && getLocal(DISCLAIMER_ACK_KEY) === "ack") return;
 
-  // Do not show repeatedly in the same tab session
-  if (getSession(DISCLAIMER_SESSION_KEY) === "shown") return;
+  // Do not show repeatedly in the same tab session unless forced.
+  if (!force && getSession(DISCLAIMER_SESSION_KEY) === "shown") return;
 
   // Already open?
   if (document.getElementById("disclaimer_overlay")) return;
 
-  setSession(DISCLAIMER_SESSION_KEY, "shown");
+  if (!force) setSession(DISCLAIMER_SESSION_KEY, "shown");
 
   const overlay = document.createElement("div");
   overlay.id = "disclaimer_overlay";
@@ -197,7 +192,7 @@ function showDisclaimerIfNeeded() {
     '  <div class="modalFoot">' +
     '    <div class="modalRow">' +
     '      <label class="modalCheck"><input id="disc_never" type="checkbox"> Do not show this again</label>' +
-    '    </div>' +
+    "    </div>" +
     '    <div class="modalBtnRow">' +
     '      <button id="disc_ok" type="button">I understand</button>' +
     "    </div>" +
@@ -207,18 +202,14 @@ function showDisclaimerIfNeeded() {
 
   document.body.appendChild(overlay);
 
-  // Close on button
   document.getElementById("disc_ok").addEventListener("click", function () {
     const never = document.getElementById("disc_never");
     if (never && never.checked) setLocal(DISCLAIMER_ACK_KEY, "ack");
     removeDisclaimerModal();
   });
 
-  // Close if user clicks outside the card
   overlay.addEventListener("click", function (e) {
-    if (e && e.target === overlay) {
-      removeDisclaimerModal();
-    }
+    if (e && e.target === overlay) removeDisclaimerModal();
   });
 }
 
@@ -307,6 +298,7 @@ let app = null;
 
   .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:6px; }
   .logo { max-width: 60%; }
+  .logo a { display:inline-block; }
   .logo img { width: 100%; max-width: 260px; height: auto; display:block; }
 
   .title { text-align:right; font-weight:900; font-size:18px; line-height:20px; }
@@ -585,33 +577,6 @@ function hasResolvedLocation() {
   return typeof state.lat === "number" && typeof state.lon === "number";
 }
 
-function setResolvedLocation(lat, lon, label) {
-  state.lat = Number(lat);
-  state.lon = Number(lon);
-  state.placeLabel = String(label || "");
-  saveLastLocation(state.lat, state.lon, state.placeLabel);
-
-  // bust forecast cache for location change
-  forecastCache.key = "";
-  forecastCache.ts = 0;
-  forecastCache.wx = null;
-  forecastCache.sun = null;
-}
-
-function clearResolvedLocation() {
-  state.lat = null;
-  state.lon = null;
-  state.placeLabel = "";
-  state.matches = [];
-  state.selectedIndex = 0;
-  clearLastLocation();
-
-  forecastCache.key = "";
-  forecastCache.ts = 0;
-  forecastCache.wx = null;
-  forecastCache.sun = null;
-}
-
 function isoTodayLocal() {
   const d = new Date();
   const y = d.getFullYear();
@@ -667,6 +632,24 @@ function stopSpeedWatchIfRunning() {
     // ignore
   }
   state.speedWatchId = null;
+}
+
+// ----------------------------
+// Forecast bundle cache (7-day pack)
+// - prevents refetching on every small UI change
+// ----------------------------
+const forecastCache = {
+  key: "", // "lat,lon"
+  ts: 0, // ms epoch
+  wx: null,
+  sun: null
+};
+
+// 10 minutes is enough for "refresh on open" + not hammering API
+const FORECAST_TTL_MS = 10 * 60 * 1000;
+
+function cacheKey(lat, lon) {
+  return String(Number(lat).toFixed(4)) + "," + String(Number(lon).toFixed(4));
 }
 
 // ----------------------------
@@ -728,14 +711,44 @@ function niceErr(e) {
 }
 
 // ============================
-// app.js (PART 1 OF 3) END
+// app.js (PART 1 OF 4) END
 // ============================
 // ============================
-// app.js (PART 2 OF 3) BEGIN
+// app.js (PART 2 OF 4) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.2.1
+// Version 1.2.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
+
+// ----------------------------
+// Location resolve helpers (and cache busting)
+// ----------------------------
+function setResolvedLocation(lat, lon, label) {
+  state.lat = Number(lat);
+  state.lon = Number(lon);
+  state.placeLabel = String(label || "");
+  saveLastLocation(state.lat, state.lon, state.placeLabel);
+
+  // bust forecast cache for location change
+  forecastCache.key = "";
+  forecastCache.ts = 0;
+  forecastCache.wx = null;
+  forecastCache.sun = null;
+}
+
+function clearResolvedLocation() {
+  state.lat = null;
+  state.lon = null;
+  state.placeLabel = "";
+  state.matches = [];
+  state.selectedIndex = 0;
+  clearLastLocation();
+
+  forecastCache.key = "";
+  forecastCache.ts = 0;
+  forecastCache.wx = null;
+  forecastCache.sun = null;
+}
 
 // ----------------------------
 // API: Geocoding
@@ -879,24 +892,6 @@ async function fetchWeatherWindMulti(lat, lon) {
   };
 }
 
-// ----------------------------
-// Forecast bundle cache (7-day pack)
-// - prevents refetching on every small UI change
-// ----------------------------
-const forecastCache = {
-  key: "", // "lat,lon"
-  ts: 0, // ms epoch
-  wx: null,
-  sun: null
-};
-
-// 10 minutes is enough for "refresh on open" + not hammering API
-const FORECAST_TTL_MS = 10 * 60 * 1000;
-
-function cacheKey(lat, lon) {
-  return String(Number(lat).toFixed(4)) + "," + String(Number(lon).toFixed(4));
-}
-
 async function getForecastBundle(lat, lon) {
   const k = cacheKey(lat, lon);
   const now = Date.now();
@@ -1024,6 +1019,7 @@ function drawWindLineChart(canvas, points) {
       return "";
     }
   }
+
   const iStart = 0;
   const iMid2 = Math.floor((points.length - 1) / 2);
   const iEnd = points.length - 1;
@@ -1044,6 +1040,7 @@ function drawWindLineChart(canvas, points) {
 // ----------------------------
 // UI: Header + Nav
 // - Home button hidden while on Home (only shown elsewhere)
+// - Logo is hyperlinked to fishynw.com (no layout change)
 // ----------------------------
 const PAGE_TITLES = {
   Home: "Weather/Wind + Best Times",
@@ -1058,9 +1055,11 @@ function renderHeaderAndNav() {
   app.innerHTML =
     '<div class="wrap">' +
     '  <div class="header">' +
-    '    <div class="logo"><img src="' +
+    '    <div class="logo"><a href="' +
+    escHtml(LOGO_LINK) +
+    '" target="_blank" rel="noopener noreferrer"><img src="' +
     escHtml(LOGO_URL) +
-    '" alt="FishyNW"></div>' +
+    '" alt="FishyNW"></a></div>' +
     '    <div class="title">' +
     escHtml(title) +
     '<div class="small muted">v ' +
@@ -1069,7 +1068,13 @@ function renderHeaderAndNav() {
     "  </div>" +
     '  <div class="nav" id="nav"></div>' +
     '  <div id="page"></div>' +
-    '  <div class="footer"><strong>FishyNW.com</strong><br>Independent Northwest fishing tools</div>' +
+    '  <div class="footer">' +
+    '    <strong>FishyNW.com</strong><br>' +
+    "    Independent Northwest fishing tools" +
+    '    <div style="margin-top:8px;">' +
+    '      <button id="open_disclaimer" type="button" style="background:rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.16); color: rgba(0,0,0,0.78);">Disclaimer</button>' +
+    "    </div>" +
+    "  </div>" +
     "</div>";
 
   const nav = document.getElementById("nav");
@@ -1102,6 +1107,13 @@ function renderHeaderAndNav() {
 
     nav.appendChild(btn);
   }
+
+  const discBtn = document.getElementById("open_disclaimer");
+  if (discBtn) {
+    discBtn.addEventListener("click", function () {
+      openDisclaimerModal(true);
+    });
+  }
 }
 
 function pageEl() {
@@ -1110,7 +1122,6 @@ function pageEl() {
 
 // ----------------------------
 // UI: Location Picker (reusable)
-// - NO clear saved location button
 // - auto-clears saved location if user edits the box
 // - optional auto GPS on mount (only when no saved location)
 // ----------------------------
@@ -1303,12 +1314,12 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
 }
 
 // ============================
-// app.js (PART 2 OF 3) END
+// app.js (PART 2 OF 4) END
 // ============================
 // ============================
-// app.js (PART 3 OF 3) BEGIN
+// app.js (PART 3 OF 4) BEGIN
 // FishyNW.com - Fishing Tools (Web)
-// Version 1.2.1
+// Version 1.2.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
 // ============================
 
@@ -1394,6 +1405,11 @@ function compute120RuleLabel(inputs) {
   const windMax = safeNum(inputs.windMax, 0);
   const gustMax = safeNum(inputs.gustMax, windMax);
 
+  // Rain+Cold rule input
+  const popRaw = inputs.popMax;
+  const popIsFinite = Number.isFinite(Number(popRaw));
+  const popMax = popIsFinite ? safeNum(popRaw, 0) : null;
+
   const heatIndex = tmax + windMax;
   const gustIndex = tmax + gustMax;
 
@@ -1421,12 +1437,23 @@ function compute120RuleLabel(inputs) {
 
   const avgF = (tmin + tmax) / 2;
 
+  // Cold-risk floors
   let forceAtLeastCaution = false;
   let forceNoGo = false;
 
   if (tmax <= 43) forceAtLeastCaution = true;
   if (tmin <= 35 && windMax >= 8) forceAtLeastCaution = true;
   if (tmin <= 20 || avgF <= 25) forceNoGo = true;
+
+  // NEW: Rain + cold -> at least CAUTION (judgment rule)
+  // If meaningful rain chance AND temps are cold, consequences jump.
+  if (popIsFinite && popMax >= 30 && tmax < 50) {
+    forceAtLeastCaution = true;
+  }
+  // If it is very likely raining and very cold, push harder.
+  if (popIsFinite && popMax >= 60 && avgF <= 40) {
+    forceAtLeastCaution = true;
+  }
 
   if (forceNoGo) label = "NO-GO";
   else if (forceAtLeastCaution && label === "GO") label = "CAUTION";
@@ -1452,6 +1479,11 @@ function computeGoStatus(inputs) {
   const tmin = safeNum(inputs.tmin, 40);
   const tmax = safeNum(inputs.tmax, 55);
   const avgF = (tmin + tmax) / 2;
+
+  // Rain input
+  const popRaw = inputs.popMax;
+  const popIsFinite = Number.isFinite(Number(popRaw));
+  const popMax = popIsFinite ? safeNum(popRaw, 0) : null;
 
   let goWind = 10;
   let cautionWind = 14;
@@ -1502,7 +1534,8 @@ function computeGoStatus(inputs) {
     tmin: tmin,
     tmax: tmax,
     windMax: windMax,
-    gustMax: gustMax
+    gustMax: gustMax,
+    popMax: popMax
   });
 
   function scoreFrom120(idx, goLimit, noGoLimit) {
@@ -1526,9 +1559,18 @@ function computeGoStatus(inputs) {
 
   let score = Math.max(sWind, sGust, s120);
 
+  // Cold penalty
   const chillPenalty =
     Math.max(0, 35 - avgF) * 0.6 + Math.max(0, windMax - 5) * 0.4;
   if (avgF < 45) score += Math.min(18, chillPenalty);
+
+  // NEW: Rain + cold penalty (judgment)
+  // Rain makes "cold" feel colder and reduces margin for error (wet + wind).
+  if (popIsFinite && popMax !== null) {
+    if (popMax >= 60 && avgF <= 45) score += 10;
+    else if (popMax >= 30 && avgF <= 45) score += 6;
+    else if (popMax >= 30 && tmax < 50) score += 4;
+  }
 
   score = Math.max(0, Math.min(100, score));
 
@@ -1536,14 +1578,22 @@ function computeGoStatus(inputs) {
   if (score >= 70) label = "NO-GO";
   else if (score >= 35) label = "CAUTION";
 
+  // Respect 120-rule floor
   if (r120.label === "NO-GO") label = "NO-GO";
   else if (r120.label === "CAUTION" && label === "GO") label = "CAUTION";
 
+  // Additional cold floors
   let forceAtLeastCaution = false;
   let forceNoGo = false;
 
   if (tmax <= 30) forceAtLeastCaution = true;
   if (tmin <= 20 || avgF <= 22) forceNoGo = true;
+
+  // NEW: Explicit rule requested
+  // If it rains while under 50 degrees, at least CAUTION.
+  if (popIsFinite && popMax !== null && popMax >= 30 && tmax < 50) {
+    forceAtLeastCaution = true;
+  }
 
   if (forceNoGo) label = "NO-GO";
   else if (forceAtLeastCaution && label === "GO") label = "CAUTION";
@@ -1572,7 +1622,10 @@ function computeGoStatus(inputs) {
     String(Math.round(tmax)) +
     "|" +
     "idx" +
-    String(Math.round(r120.effIndex));
+    String(Math.round(r120.effIndex)) +
+    "|" +
+    "pop" +
+    String(popIsFinite && popMax !== null ? Math.round(popMax) : "na");
 
   let msg = pickFunnyReason(label, seedStr);
 
@@ -1585,6 +1638,10 @@ function computeGoStatus(inputs) {
       " + wind " +
       String(Math.round(windMax)) +
       ".)";
+  }
+
+  if (popIsFinite && popMax !== null && popMax >= 30 && tmax < 50) {
+    msg += " Wet + cold reduces margin for error. Plan for being soaked and chilled.";
   }
 
   if (tmax <= 43 && label !== "NO-GO") {
@@ -1615,7 +1672,10 @@ function computeExposureTips(inputs) {
   const tips = [];
 
   // Precip specific
-  if (popIsFinite && popMax >= 60) {
+  if (popIsFinite && popMax >= 80) {
+    tips.push("Very high rain chance. Expect to get wet. Bring a real rain shell and waterproof gloves.");
+    tips.push("Dry bag spare socks and a warm hat. Wet feet ruin everything fast.");
+  } else if (popIsFinite && popMax >= 60) {
     tips.push("High rain chance. Bring a real rain shell and keep spare clothes in a dry bag.");
     tips.push("Waterproof phone case and towel in the hatch can save the day.");
   } else if (popIsFinite && popMax >= 30) {
@@ -1624,6 +1684,12 @@ function computeExposureTips(inputs) {
     tips.push("Low rain chance. Still plan for spray and surprise weather.");
   } else {
     tips.push("Precip data may be unavailable. Assume conditions can change and pack a light shell.");
+  }
+
+  // Rain + cold
+  if (popIsFinite && popMax >= 30 && tmax < 50) {
+    tips.unshift("Rain + under 50 F: treat this as at least CAUTION. Wet clothing drains heat fast.");
+    tips.push("Choose insulation that still works damp (wool/synthetics). Avoid cotton.");
   }
 
   // Wind specific
@@ -1663,97 +1729,18 @@ function computeExposureTips(inputs) {
     tmin: tmin,
     tmax: tmax,
     windMax: windMax,
-    gustMax: gustMax
+    gustMax: gustMax,
+    popMax: popMax
   });
   if (r120.label !== "GO") {
-    tips.unshift("Today is a " + r120.label + " kind of day in the 120-rule model. Consider shortening the trip and staying protected.");
+    tips.unshift(
+      "Today is a " +
+        r120.label +
+        " kind of day in the 120-rule model. Consider shortening the trip and staying protected."
+    );
   }
 
   return tips;
-}
-
-// ----------------------------
-// Disclaimer modal (popup)
-// Shows once per browser, and also available from footer link.
-// ----------------------------
-const DISCLAIMER_KEY = "fishynw_disclaimer_v1"; // "ack"
-
-function hasDisclaimerAck() {
-  try {
-    return localStorage.getItem(DISCLAIMER_KEY) === "ack";
-  } catch (e) {
-    return false;
-  }
-}
-
-function setDisclaimerAck() {
-  try {
-    localStorage.setItem(DISCLAIMER_KEY, "ack");
-  } catch (e) {
-    // ignore
-  }
-}
-
-function openDisclaimerModal(force) {
-  if (!force && hasDisclaimerAck()) return;
-  if (document.getElementById("disclaimer_modal")) return;
-
-  const overlay = document.createElement("div");
-  overlay.id = "disclaimer_modal";
-  overlay.style.position = "fixed";
-  overlay.style.left = "0";
-  overlay.style.top = "0";
-  overlay.style.right = "0";
-  overlay.style.bottom = "0";
-  overlay.style.background = "rgba(0,0,0,0.55)";
-  overlay.style.zIndex = "9998";
-  overlay.style.display = "flex";
-  overlay.style.alignItems = "center";
-  overlay.style.justifyContent = "center";
-  overlay.style.padding = "14px";
-
-  const card = document.createElement("div");
-  card.style.maxWidth = "720px";
-  card.style.width = "100%";
-  card.style.background = "#ffffff";
-  card.style.borderRadius = "16px";
-  card.style.border = "1px solid rgba(0,0,0,0.14)";
-  card.style.boxShadow = "0 10px 30px rgba(0,0,0,0.20)";
-  card.style.padding = "14px";
-
-  card.innerHTML =
-    '<div style="font-weight:900; font-size:18px; margin-bottom:8px;">Disclaimer</div>' +
-    '<div class="small muted" style="line-height:18px;">' +
-    "These tools provide general estimates and weather summaries. Conditions can change fast and forecasts can be wrong. " +
-    "You are responsible for your own safety and decisions. Use your own judgment, check local conditions at the launch, " +
-    "and do not go if you are unsure. Always follow local rules and wear appropriate safety gear." +
-    "</div>" +
-    '<div class="btnRow" style="margin-top:12px;">' +
-    '  <button id="disc_ok" type="button">I understand</button>' +
-    '  <button id="disc_close" type="button" style="background:rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.16); color: rgba(0,0,0,0.78);">Close</button>' +
-    "</div>" +
-    '<div class="small muted" style="margin-top:10px;">Tip: if anything feels off, stay close to shore or pick another day.</div>';
-
-  overlay.appendChild(card);
-  document.body.appendChild(overlay);
-
-  function closeModal() {
-    const el = document.getElementById("disclaimer_modal");
-    if (el && el.parentNode) el.parentNode.removeChild(el);
-  }
-
-  document.getElementById("disc_ok").addEventListener("click", function () {
-    setDisclaimerAck();
-    closeModal();
-  });
-
-  document.getElementById("disc_close").addEventListener("click", function () {
-    closeModal();
-  });
-
-  overlay.addEventListener("click", function (e) {
-    if (e.target === overlay) closeModal();
-  });
 }
 
 // ----------------------------
@@ -1972,10 +1959,10 @@ function renderHome() {
       windMax: windMax,
       gustMax: gustMax,
       tmin: tmin,
-      tmax: tmax
+      tmax: tmax,
+      popMax: popMax
     });
 
-    // Exposure tips now match the selected day (includes popMax)
     const tips = computeExposureTips({
       craft: state.craft,
       waterType: state.waterType,
@@ -2123,6 +2110,16 @@ function renderHome() {
   }
 }
 
+// ============================
+// app.js (PART 3 OF 4) END
+// ============================
+// ============================
+// app.js (PART 4 OF 4) BEGIN
+// FishyNW.com - Fishing Tools (Web)
+// Version 1.2.3
+// ASCII ONLY. No Unicode. No smart quotes. No special dashes.
+// ============================
+
 // ----------------------------
 // Depth Calculator
 // ----------------------------
@@ -2191,18 +2188,29 @@ function renderDepthCalculator() {
     if (t.indexOf("braid") >= 0) return 0.88;
     if (t.indexOf("fluoro") >= 0) return 0.96;
     if (t.indexOf("lead") >= 0) return 0.72;
-    return 1.00;
+    return 1.0;
   }
 
   function lineTestFactor(testLb, lineType) {
     const t = safeNum(testLb, 12);
-    let f = t <= 10 ? 1.0 : t <= 12 ? 0.95 : t <= 20 ? 0.85 : t <= 25 ? 0.80 : t <= 30 ? 0.76 : 0.72;
+    let f =
+      t <= 10
+        ? 1.0
+        : t <= 12
+        ? 0.95
+        : t <= 20
+        ? 0.85
+        : t <= 25
+        ? 0.8
+        : t <= 30
+        ? 0.76
+        : 0.72;
 
     const lt = String(lineType || "").toLowerCase();
     if (lt.indexOf("braid") >= 0) {
       if (t >= 40) f = Math.max(f, 0.86);
       else if (t >= 30) f = Math.max(f, 0.88);
-      else if (t >= 25) f = Math.max(f, 0.90);
+      else if (t >= 25) f = Math.max(f, 0.9);
       else if (t >= 20) f = Math.max(f, 0.92);
       else if (t >= 15) f = Math.max(f, 0.95);
     }
@@ -2212,7 +2220,7 @@ function renderDepthCalculator() {
     }
 
     if (lt.indexOf("lead") >= 0) {
-      f = 0.90;
+      f = 0.9;
     }
 
     return f;
@@ -2223,7 +2231,9 @@ function renderDepthCalculator() {
     const weight = safeNum(document.getElementById("dc_weight").value, 2);
     const line = safeNum(document.getElementById("dc_line").value, 100);
     const test = safeNum(document.getElementById("dc_test").value, 12);
-    const lineType = String(document.getElementById("dc_linetype").value || "Monofilament");
+    const lineType = String(
+      document.getElementById("dc_linetype").value || "Monofilament"
+    );
 
     const dragFactor = lineTestFactor(test, lineType) * lineTypeFactor(lineType);
 
@@ -2250,7 +2260,7 @@ function renderDepthCalculator() {
 }
 
 // ----------------------------
-// Species Tips (PNW expanded)
+// Species Tips (PNW expanded, encyclopedia style)
 // ----------------------------
 function renderSpeciesTips() {
   const page = pageEl();
@@ -2260,117 +2270,165 @@ function renderSpeciesTips() {
       name: "Largemouth Bass",
       range: "55 to 75 F (most active)",
       bullets: [
-        "Topwater early and late when water is warm enough.",
-        "Midday: work edges, docks, and weed lines with jigs and plastics.",
-        "Cold fronts: slow down with finesse and target deeper transitions."
+        "Where: weeds, docks, wood, shade lines, pockets in grass. They love cover.",
+        "When: low light (dawn/dusk) and overcast can extend shallow feeding.",
+        "How: flip jigs/creature baits to cover; swim jigs along weed edges; topwater when water is warm enough.",
+        "Cold fronts: slow down with finesse (wacky, dropshot) and target deeper transitions.",
+        "Season notes: prespawn = staging points/first breaks; spawn = protect beds (be gentle); postspawn = bluegill beds and shade."
       ]
     },
     {
       name: "Smallmouth Bass",
       range: "50 to 70 F (most active)",
       bullets: [
-        "Wind can improve the bite on rocky points and flats.",
-        "Use jigs, tubes, jerkbaits, and small swimbaits.",
-        "In cold water, slow down and stay close to bottom structure."
+        "Where: rock, gravel, points, current seams, shoals, riprap, deep boulders.",
+        "Wind: often improves the bite on rocky points and flats (pushes bait).",
+        "How: tubes, ned rigs, finesse jigs, jerkbaits, small swimbaits, crankbaits on rock.",
+        "Clear water: natural colors and long casts. Stained water: add vibration/contrast.",
+        "Cold water: stay near bottom and slow down; soak the bait and pause longer."
       ]
     },
     {
-      name: "Trout (rainbow)",
+      name: "Trout (Rainbow)",
       range: "45 to 65 F (most active)",
       bullets: [
-        "Troll early for consistent action, then switch to casting near inlets.",
-        "If sun is high, target deeper water or shaded banks.",
-        "Match speed and lure size to water clarity and forage."
+        "Where: inlets, drop-offs, wind-blown banks, edges of thermal layers in summer.",
+        "Morning: troll early for consistent action, then cast near current or structure once sun rises.",
+        "Presentations: spinners, spoons, small plugs; trolling with small dodgers and spinners works too.",
+        "Speed: adjust until you get consistent bites; if you mark fish but no bites, change speed first.",
+        "Hot weather: target deeper water and consider trolling along the thermocline if you have sonar."
       ]
     },
     {
       name: "Kokanee",
       range: "45 to 60 F (best comfort)",
       bullets: [
-        "Early light is prime. Troll slow with small dodger + spinner or hoochie.",
-        "Use scent and tune speed until you see consistent strikes.",
-        "If marks are deep, use heavier weight or downrigger to stay on the school."
+        "Where: open water schools; often relate to depth bands and plankton layers.",
+        "When: first light is prime. Bite windows can be short; be ready at dawn.",
+        "How: small dodger + spinner/hoochie; short leaders common (tune until bites).",
+        "Speed: slow and steady; small speed changes or S-turns can trigger strikes.",
+        "Depth control: heavier weights or downrigger helps keep you on the school; watch for consistent marks."
       ]
     },
     {
       name: "Chinook Salmon",
       range: "42 to 58 F (typical target water)",
       bullets: [
-        "Troll bait or flasher + hoochie; keep speed steady and turns wide.",
-        "Fish the temperature band and the bait: adjust depth until you see action.",
-        "In wind, stay conservative and prioritize a safe return route."
+        "Where: follow bait and temperature; edges of current, points, drop-offs, travel lanes.",
+        "How: troll bait or flasher + hoochie; keep speed steady and turns wide (avoid blowing out gear).",
+        "Depth: adjust until you see action; if you have marks and no bites, change depth before changing lure.",
+        "Light: early and late can shine, but Chinook will bite midday if you are in the zone.",
+        "Safety: wind + cold water can be unforgiving. Stay conservative and keep a safe return route."
       ]
     },
     {
       name: "Coho Salmon",
       range: "45 to 60 F",
       bullets: [
-        "Coho often respond to faster presentations than Chinook.",
-        "Cover water: troll or cast in travel lanes and near current seams.",
-        "Bright/flashy presentations can shine in stained water."
+        "Behavior: generally more aggressive than Chinook and often respond to faster presentations.",
+        "Where: travel lanes, rips, current seams, near bait schools, river mouths (in season).",
+        "How: troll faster than Chinook; also cast spinners/spoons when fish are near surface.",
+        "Colors: bright/flashy can excel in stained water; scale back to natural in clear water.",
+        "Tip: when you get a bite, repeat that line, speed, and turn angle."
       ]
     },
     {
       name: "Sockeye",
       range: "45 to 60 F",
       bullets: [
-        "Use legal methods for your water (often specialized; check regs).",
-        "Target travel corridors and keep presentation consistent.",
-        "If you see fish rolling, adjust depth and speed rather than lure size."
+        "Regulations: methods can be highly specific by water. Always check local regs.",
+        "Where: travel corridors and staging areas; often more about location than lure variety.",
+        "How: keep presentation consistent; depth and speed adjustments matter more than constant lure swaps.",
+        "When: morning and evening can be best, but schooling fish can pop any time.",
+        "Tip: if you see rolling fish, tune depth and speed first."
       ]
     },
     {
       name: "Walleye",
       range: "50 to 70 F",
       bullets: [
-        "Low light: troll crankbaits or run spinners on edges and flats.",
+        "Where: edges and transitions, humps, points, flats near deep water, current breaks.",
+        "Low light: crankbaits and spinners shine; fish may slide shallow to feed.",
         "Daytime: jig transitions and humps; slow down when bite is light.",
-        "Wind can help: position so you can work structure without drifting too fast."
+        "Wind: can help you position and activate fish, but drifting too fast kills bite.",
+        "Tip: keep contact with bottom when jigging. If you are not ticking, you are too high."
       ]
     },
     {
       name: "Yellow Perch",
       range: "45 to 70 F",
       bullets: [
-        "Small jigs and bait shine. Keep it near bottom.",
-        "If you catch one, stay put; perch school up tight.",
-        "Light line and subtle motion usually outperforms aggressive jigging."
+        "Where: weeds, flats, inside turns, near structure. They school tight.",
+        "How: small jigs and bait; keep it near bottom. Subtle motion often wins.",
+        "Finding them: once you catch one, stay put and work the school.",
+        "Gear: light line and small hooks improve bites; keep your jig in the zone.",
+        "Tip: if bites stop, move 20 to 50 feet and re-check depth/structure."
       ]
     },
     {
       name: "Crappie",
       range: "55 to 75 F",
       bullets: [
-        "Look for brush, docks, and protected bays.",
-        "Slow vertical presentations and small plastics work well.",
-        "On cold fronts, go deeper and slow way down."
+        "Where: brush, docks, submerged trees, protected bays; often suspend.",
+        "How: slow vertical presentations; small jigs, tiny plastics, light bobber rigs.",
+        "Cold fronts: go deeper and slow down. They can get neutral fast.",
+        "Timing: pre-spawn and spawn periods can create fast action in shallow cover.",
+        "Tip: if you see them on sonar but no bites, reduce jig size and slow the cadence."
       ]
     },
     {
       name: "Northern Pike",
       range: "45 to 70 F",
       bullets: [
-        "Edges of weeds and points are key. Cover water with larger baits.",
-        "Steel/fluoro leader helps prevent bite-offs.",
-        "Handle carefully and keep fingers away from gills/teeth."
+        "Where: weed edges, points, shallow bays, and ambush lanes.",
+        "How: cover water with larger baits (spoons, swimbaits, jerkbaits).",
+        "Leaders: use steel or heavy fluoro to prevent bite-offs.",
+        "Handling: keep fingers away from gills/teeth; long pliers help.",
+        "Tip: pauses often trigger strikes; give them a moment to commit."
       ]
     },
     {
       name: "Lake Trout (Mackinaw)",
       range: "40 to 55 F (cold water)",
       bullets: [
-        "Focus deep structure: humps, drop-offs, and basin edges.",
-        "Troll or jig where you see marks; speed changes can trigger bites.",
-        "Keep your offering in the zone longer rather than racing around."
+        "Where: deep structure, humps, drop-offs, basin edges; often deep and roaming.",
+        "How: troll or jig where you see marks; speed changes can trigger bites.",
+        "Depth: spend more time in the zone rather than racing around.",
+        "Gear: heavier weights or downriggers help hold depth; watch turns to avoid rising.",
+        "Tip: when you mark fish tight to bottom, a slow lift-drop jigging cadence can outproduce trolling."
       ]
     },
     {
       name: "Catfish (Channel/Bullhead)",
       range: "55 to 75 F",
       bullets: [
-        "Evening/night can be best. Anchor or drift edges and flats.",
-        "Stink baits, cut bait, and worms are consistent producers.",
-        "On light bites, keep hooks sharp and give fish time to load up."
+        "Where: edges, flats, holes, current seams, warm shallows at night.",
+        "When: evening and night can be best; they roam to feed.",
+        "Baits: stink baits, cut bait, worms; match to what is common locally.",
+        "Bite: give fish time to load up; keep hooks sharp.",
+        "Tip: if action is slow, move to the next piece of structure rather than waiting all night."
+      ]
+    },
+    {
+      name: "Bluegill / Sunfish",
+      range: "60 to 80 F",
+      bullets: [
+        "Where: shallow weeds, docks, lily pads, and spawning beds in colonies.",
+        "How: tiny jigs, worms, small spinners; steady and simple catches fish.",
+        "Tactic: if you find beds, work edges first (bigger fish) before the middle.",
+        "Gear: ultralight makes it fun; small hooks and light line increase bites.",
+        "Tip: these fish are great 'pattern finders' for bass (bass often hang nearby)."
+      ]
+    },
+    {
+      name: "Carp",
+      range: "55 to 80 F",
+      bullets: [
+        "Where: flats, warm shallow bays, mud bottoms, slow current areas.",
+        "How: corn, dough baits, boilies; keep your rig subtle and let them take.",
+        "Sight fishing: in clear shallows, lead the fish and keep noise low.",
+        "Fight: long runs are common; set drag and be patient.",
+        "Tip: pre-baiting an area (small amounts) can stack fish if rules allow."
       ]
     }
   ];
@@ -2401,7 +2459,11 @@ function renderSpeciesTips() {
 
   function renderTip(i) {
     const t = tips[i];
-    const lis = t.bullets.map(function (b) { return "<li>" + escHtml(b) + "</li>"; }).join("");
+    const lis = t.bullets
+      .map(function (b) {
+        return "<li>" + escHtml(b) + "</li>";
+      })
+      .join("");
     box.innerHTML =
       "<strong>" +
       escHtml(t.name) +
@@ -2548,5 +2610,5 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 // ============================
-// app.js (PART 3 OF 3) END
+// app.js (PART 4 OF 4) END
 // ============================

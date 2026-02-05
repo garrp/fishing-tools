@@ -1,5 +1,5 @@
 // ============================
-// app.js (PART 1 OF 4) BEGIN
+// app.js (PART 1 OF 5) BEGIN
 // FishyNW.com - Fishing Tools (Web)
 // Version 1.2.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
@@ -8,6 +8,9 @@
 // - Logo is now a hyperlink to https://fishynw.com (no UI redesign; same header layout).
 // - GO/CAUTION/NO-GO logic: if rain is likely AND temps are cold (rain + under 50F), enforce at least CAUTION.
 // - Species Tips expanded into "encyclopedia" style (kept same UI structure; dropdown + content).
+// - NEW (no UI change): Species Tips supports optional photo per species (only shows if a URL is present).
+// - UPDATE: Species tips now show extra info paragraphs (spawn/season notes) under bullet points.
+// - UPDATE: Species photo is shown LAST (text above photo).
 // ============================
 
 "use strict";
@@ -443,6 +446,17 @@ let app = null;
     border: 1px solid rgba(0,0,0,0.12);
   }
 
+  /* Species photo (only shows when URL exists) */
+  .speciesPhotoWrap { margin-top: 10px; margin-bottom: 0; }
+  .speciesPhoto {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: rgba(255,255,255,0.9);
+  }
+
   .consentBar {
     position: fixed;
     left: 0; right: 0; bottom: 0;
@@ -711,10 +725,10 @@ function niceErr(e) {
 }
 
 // ============================
-// app.js (PART 1 OF 4) END
+// app.js (PART 1 OF 5) END
 // ============================
 // ============================
-// app.js (PART 2 OF 4) BEGIN
+// app.js (PART 2 OF 5) BEGIN
 // FishyNW.com - Fishing Tools (Web)
 // Version 1.2.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
@@ -1314,10 +1328,10 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
 }
 
 // ============================
-// app.js (PART 2 OF 4) END
+// app.js (PART 2 OF 5) END
 // ============================
 // ============================
-// app.js (PART 3 OF 4) BEGIN
+// app.js (PART 3 OF 5) BEGIN
 // FishyNW.com - Fishing Tools (Web)
 // Version 1.2.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
@@ -1743,6 +1757,16 @@ function computeExposureTips(inputs) {
   return tips;
 }
 
+// ============================
+// app.js (PART 3 OF 5) END
+// ============================
+// ============================
+// app.js (PART 4 OF 5) BEGIN
+// FishyNW.com - Fishing Tools (Web)
+// Version 1.2.3
+// ASCII ONLY. No Unicode. No smart quotes. No special dashes.
+// ============================
+
 // ----------------------------
 // Home: Date-driven forecast + water toggle + auto refresh
 // ----------------------------
@@ -2111,10 +2135,10 @@ function renderHome() {
 }
 
 // ============================
-// app.js (PART 3 OF 4) END
+// app.js (PART 4 OF 5) END
 // ============================
 // ============================
-// app.js (PART 4 OF 4) BEGIN
+// app.js (PART 5 OF 5) BEGIN
 // FishyNW.com - Fishing Tools (Web)
 // Version 1.2.3
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
@@ -2261,6 +2285,8 @@ function renderDepthCalculator() {
 
 // ----------------------------
 // Species Tips (PNW expanded, encyclopedia style)
+// - Optional photo per species: add `photo:` URL. If blank/missing, no image is shown.
+// - New: optional `p1` and `p2` paragraphs shown after bullets, before photo.
 // ----------------------------
 function renderSpeciesTips() {
   const page = pageEl();
@@ -2269,167 +2295,212 @@ function renderSpeciesTips() {
     {
       name: "Largemouth Bass",
       range: "55 to 75 F (most active)",
+      photo: "https://fishynw.com/wp-content/uploads/2024/12/largemouth-dink-e1753942608642.jpg",
       bullets: [
         "Where: weeds, docks, wood, shade lines, pockets in grass. They love cover.",
         "When: low light (dawn/dusk) and overcast can extend shallow feeding.",
         "How: flip jigs/creature baits to cover; swim jigs along weed edges; topwater when water is warm enough.",
         "Cold fronts: slow down with finesse (wacky, dropshot) and target deeper transitions.",
         "Season notes: prespawn = staging points/first breaks; spawn = protect beds (be gentle); postspawn = bluegill beds and shade."
-      ]
+      ],
+      p1: "Spawn: usually when water warms into the low 60s. Males fan beds in protected coves and pockets, often near hard bottom and cover. They will guard the bed and fry, which can make them easier to locate but also more sensitive to repeated pressure.",
+      p2: "Pattern tip: find one quality fish, then look for that same combo of cover + depth + sunlight angle. If you see bluegill activity, work nearby shade and edges with a compact jig or wacky rig."
     },
     {
       name: "Smallmouth Bass",
       range: "50 to 70 F (most active)",
+      // photo: "PASTE_IMAGE_URL_HERE",
       bullets: [
         "Where: rock, gravel, points, current seams, shoals, riprap, deep boulders.",
         "Wind: often improves the bite on rocky points and flats (pushes bait).",
         "How: tubes, ned rigs, finesse jigs, jerkbaits, small swimbaits, crankbaits on rock.",
         "Clear water: natural colors and long casts. Stained water: add vibration/contrast.",
         "Cold water: stay near bottom and slow down; soak the bait and pause longer."
-      ]
+      ],
+      p1: "Spawn: commonly mid to upper 50s into low 60s. They prefer gravel or firm sand near rock, often on points, shelves, and protected sides of structure. Males guard nests and can sit shallow even when most of the fish are still staging deeper.",
+      p2: "Pattern tip: if you are getting short strikes, downsize and slow your retrieve. On windy days, target the windward side and use baits that stay in contact with bottom (ned, tube, finesse jig)."
     },
     {
       name: "Trout (Rainbow)",
       range: "45 to 65 F (most active)",
+      photo: "https://fishynw.com/wp-content/uploads/2025/03/20250322_114536-scaled-e1753944691694.jpg",
       bullets: [
         "Where: inlets, drop-offs, wind-blown banks, edges of thermal layers in summer.",
         "Morning: troll early for consistent action, then cast near current or structure once sun rises.",
         "Presentations: spinners, spoons, small plugs; trolling with small dodgers and spinners works too.",
         "Speed: adjust until you get consistent bites; if you mark fish but no bites, change speed first.",
         "Hot weather: target deeper water and consider trolling along the thermocline if you have sonar."
-      ]
+      ],
+      p1: "Spawn: most rainbows spawn in spring, often using tributaries or shallow gravel areas depending on the system. Post-spawn fish can feed aggressively and often hold near current, oxygen, and consistent temperature.",
+      p2: "Pattern tip: watch surface clues and wind. Wind can push food to a shoreline and turn a slow day into a steady bite. If you see insects or small bait, match size first, then adjust color."
     },
     {
       name: "Kokanee",
       range: "45 to 60 F (best comfort)",
+      photo: "https://fishynw.com/wp-content/uploads/2025/08/kokanee-8-27-25-scaled.jpg",
       bullets: [
         "Where: open water schools; often relate to depth bands and plankton layers.",
         "When: first light is prime. Bite windows can be short; be ready at dawn.",
         "How: small dodger + spinner/hoochie; short leaders common (tune until bites).",
         "Speed: slow and steady; small speed changes or S-turns can trigger strikes.",
         "Depth control: heavier weights or downrigger helps keep you on the school; watch for consistent marks."
-      ]
+      ],
+      p1: "Spawn: late summer into fall as they stage and run into tributaries (or shoreline areas in some lakes). As they transition, feeding can drop and color changes ramp up. In the main summer bite, depth and pace are everything.",
+      p2: "Pattern tip: if you are seeing marks but getting no bites, change one thing at a time: depth first, then speed, then leader length. Once you get two bites, lock that exact setup and repeat the pass."
     },
     {
       name: "Chinook Salmon",
       range: "42 to 58 F (typical target water)",
+      // photo: "PASTE_IMAGE_URL_HERE",
       bullets: [
         "Where: follow bait and temperature; edges of current, points, drop-offs, travel lanes.",
         "How: troll bait or flasher + hoochie; keep speed steady and turns wide (avoid blowing out gear).",
         "Depth: adjust until you see action; if you have marks and no bites, change depth before changing lure.",
         "Light: early and late can shine, but Chinook will bite midday if you are in the zone.",
         "Safety: wind + cold water can be unforgiving. Stay conservative and keep a safe return route."
-      ]
+      ],
+      p1: "Spawn: typically late summer through fall depending on the system. As fish stage, location becomes more important than lure variety. Travel lanes and temperature edges matter more than constantly swapping gear.",
+      p2: "Pattern tip: run clean, consistent gear. Avoid sharp turns that tangle or lift your presentation. If you get one bite, repeat that exact depth and track line before experimenting."
     },
     {
       name: "Coho Salmon",
       range: "45 to 60 F",
+      // photo: "PASTE_IMAGE_URL_HERE",
       bullets: [
         "Behavior: generally more aggressive than Chinook and often respond to faster presentations.",
         "Where: travel lanes, rips, current seams, near bait schools, river mouths (in season).",
         "How: troll faster than Chinook; also cast spinners/spoons when fish are near surface.",
         "Colors: bright/flashy can excel in stained water; scale back to natural in clear water.",
         "Tip: when you get a bite, repeat that line, speed, and turn angle."
-      ]
+      ],
+      p1: "Spawn: fall-focused, with fish moving from open water travel to staging and river entry. As they shift, they can show up shallow and fast-moving, and they will often slash at aggressive presentations.",
+      p2: "Pattern tip: if you are not getting bit, try a small speed increase and a color change before changing your whole program. Coho often react to pace and flash."
     },
     {
       name: "Sockeye",
       range: "45 to 60 F",
+      // photo: "PASTE_IMAGE_URL_HERE",
       bullets: [
         "Regulations: methods can be highly specific by water. Always check local regs.",
         "Where: travel corridors and staging areas; often more about location than lure variety.",
         "How: keep presentation consistent; depth and speed adjustments matter more than constant lure swaps.",
         "When: morning and evening can be best, but schooling fish can pop any time.",
         "Tip: if you see rolling fish, tune depth and speed first."
-      ]
+      ],
+      p1: "Spawn: typically late summer and fall. Some fisheries are unique and highly regulated, so the legal presentation matters as much as the fish behavior. When they are traveling, staying on the correct track is the whole game.",
+      p2: "Pattern tip: if fish are rolling but not biting, do not panic-swap lures. Make controlled depth changes and repeat passes through the same corridor."
     },
     {
       name: "Walleye",
       range: "50 to 70 F",
+      photo: "https://fishynw.com/wp-content/uploads/2024/12/walleye-5945560_1280.jpg",
       bullets: [
         "Where: edges and transitions, humps, points, flats near deep water, current breaks.",
         "Low light: crankbaits and spinners shine; fish may slide shallow to feed.",
         "Daytime: jig transitions and humps; slow down when bite is light.",
         "Wind: can help you position and activate fish, but drifting too fast kills bite.",
         "Tip: keep contact with bottom when jigging. If you are not ticking, you are too high."
-      ]
+      ],
+      p1: "Spawn: usually early spring in many systems, often in rivers or rocky shoals. After spawn they spread onto nearby flats and edges and can feed hard, especially during low light and wind.",
+      p2: "Pattern tip: your speed is everything. If your drift is too fast, add weight or use a controlled troll. Most walleye bites happen when your bait is near bottom and moving steadily."
     },
     {
       name: "Yellow Perch",
       range: "45 to 70 F",
+      photo: "https://fishynw.com/wp-content/uploads/2024/12/river-fish-1164953_1280.jpg",
       bullets: [
         "Where: weeds, flats, inside turns, near structure. They school tight.",
         "How: small jigs and bait; keep it near bottom. Subtle motion often wins.",
         "Finding them: once you catch one, stay put and work the school.",
         "Gear: light line and small hooks improve bites; keep your jig in the zone.",
         "Tip: if bites stop, move 20 to 50 feet and re-check depth/structure."
-      ]
+      ],
+      p1: "Spawn: spring time, often in shallow vegetation. After spawn they can group up tight and roam edges and flats. When you find perch, it can be fast until the school slides.",
+      p2: "Pattern tip: use a slow lift and tiny shakes rather than big hops. If you are catching small fish, move slightly deeper or to a thicker weed edge to find better size."
     },
     {
       name: "Crappie",
       range: "55 to 75 F",
+      photo: "https://fishynw.com/wp-content/uploads/2024/12/crappie-5110219_1280.jpg",
       bullets: [
         "Where: brush, docks, submerged trees, protected bays; often suspend.",
         "How: slow vertical presentations; small jigs, tiny plastics, light bobber rigs.",
         "Cold fronts: go deeper and slow down. They can get neutral fast.",
         "Timing: pre-spawn and spawn periods can create fast action in shallow cover.",
         "Tip: if you see them on sonar but no bites, reduce jig size and slow the cadence."
-      ]
+      ],
+      p1: "Spawn: typically spring when water moves through the upper 50s to 60s. They use protected pockets and cover, and they can stack tightly. Post-spawn they often suspend around brush and edges.",
+      p2: "Pattern tip: if they are suspended, stop fishing the bottom. Count down your jig or set a bobber stop so your bait stays at their level."
     },
     {
       name: "Northern Pike",
       range: "45 to 70 F",
+      photo: "https://fishynw.com/wp-content/uploads/2024/12/pike-4573367_1280.jpg",
       bullets: [
         "Where: weed edges, points, shallow bays, and ambush lanes.",
         "How: cover water with larger baits (spoons, swimbaits, jerkbaits).",
         "Leaders: use steel or heavy fluoro to prevent bite-offs.",
         "Handling: keep fingers away from gills/teeth; long pliers help.",
         "Tip: pauses often trigger strikes; give them a moment to commit."
-      ]
+      ],
+      p1: "Spawn: very early spring right after ice-out in many lakes, often in shallow flooded vegetation. Early season can be excellent because fish are shallow and recovering, then they shift to weed edges as the water warms.",
+      p2: "Pattern tip: if you are getting follows, add pauses. Many pike eat at the boat. Figure-8 style turns can convert followers when safe to do so."
     },
     {
       name: "Lake Trout (Mackinaw)",
       range: "40 to 55 F (cold water)",
+      photo: "https://fishynw.com/wp-content/uploads/2025/03/20250222_131558-scaled-e1753950889298.jpg",
       bullets: [
         "Where: deep structure, humps, drop-offs, basin edges; often deep and roaming.",
         "How: troll or jig where you see marks; speed changes can trigger bites.",
         "Depth: spend more time in the zone rather than racing around.",
         "Gear: heavier weights or downriggers help hold depth; watch turns to avoid rising.",
         "Tip: when you mark fish tight to bottom, a slow lift-drop jigging cadence can outproduce trolling."
-      ]
+      ],
+      p1: "Spawn: typically fall, often on rocky shoals or rubble. Outside of spawn periods, they are temperature-driven and will roam deep basins or edges searching for baitfish.",
+      p2: "Pattern tip: if you keep marking fish but not biting, slow down and stay on them. A controlled pass and repeated depth in the same area usually beats running all over the lake."
     },
     {
       name: "Catfish (Channel/Bullhead)",
       range: "55 to 75 F",
+      photo: "https://fishynw.com/wp-content/uploads/2024/12/channel-catfish-86584_1280.jpg",
       bullets: [
         "Where: edges, flats, holes, current seams, warm shallows at night.",
         "When: evening and night can be best; they roam to feed.",
         "Baits: stink baits, cut bait, worms; match to what is common locally.",
         "Bite: give fish time to load up; keep hooks sharp.",
         "Tip: if action is slow, move to the next piece of structure rather than waiting all night."
-      ]
+      ],
+      p1: "Spawn: late spring into summer as water warms, often in cavities (banks, logs, riprap holes). During peak warm season they can feed heavily at night and after storms when scent spreads.",
+      p2: "Pattern tip: scent + patience wins, but do not camp a dead spot forever. If you do not get action in 30 to 60 minutes, slide to the next edge or hole."
     },
     {
       name: "Bluegill / Sunfish",
       range: "60 to 80 F",
+      // photo: "PASTE_IMAGE_URL_HERE",
       bullets: [
         "Where: shallow weeds, docks, lily pads, and spawning beds in colonies.",
         "How: tiny jigs, worms, small spinners; steady and simple catches fish.",
         "Tactic: if you find beds, work edges first (bigger fish) before the middle.",
         "Gear: ultralight makes it fun; small hooks and light line increase bites.",
         "Tip: these fish are great 'pattern finders' for bass (bass often hang nearby)."
-      ]
+      ],
+      p1: "Spawn: summer colonies in shallow water, often multiple waves. Bedding areas are easy to spot and can pull in predators. The biggest fish are commonly on the outside edge, not the center.",
+      p2: "Pattern tip: if you want bigger bites, upsize slightly (small plastics instead of tiny hooks) and fish deeper weed edges adjacent to the beds."
     },
     {
       name: "Carp",
       range: "55 to 80 F",
+      // photo: "PASTE_IMAGE_URL_HERE",
       bullets: [
         "Where: flats, warm shallow bays, mud bottoms, slow current areas.",
         "How: corn, dough baits, boilies; keep your rig subtle and let them take.",
         "Sight fishing: in clear shallows, lead the fish and keep noise low.",
         "Fight: long runs are common; set drag and be patient.",
         "Tip: pre-baiting an area (small amounts) can stack fish if rules allow."
-      ]
+      ],
+      p1: "Spawn: late spring into summer in shallow vegetation, and activity can get loud. Outside spawn, carp are cautious and react to noise and shadows, especially in clear water.",
+      p2: "Pattern tip: keep your setup quiet and consistent. A small handful of bait on a schedule often works better than dumping a lot at once."
     }
   ];
 
@@ -2459,11 +2530,38 @@ function renderSpeciesTips() {
 
   function renderTip(i) {
     const t = tips[i];
+
     const lis = t.bullets
       .map(function (b) {
         return "<li>" + escHtml(b) + "</li>";
       })
       .join("");
+
+    const p1 = t && t.p1 ? String(t.p1 || "").trim() : "";
+    const p2 = t && t.p2 ? String(t.p2 || "").trim() : "";
+
+    let parasHtml = "";
+    if (p1) {
+      parasHtml += '<div class="small muted" style="margin-top:10px; line-height:17px;">' + escHtml(p1) + "</div>";
+    }
+    if (p2) {
+      parasHtml += '<div class="small muted" style="margin-top:10px; line-height:17px;">' + escHtml(p2) + "</div>";
+    }
+
+    const photoUrl = t && t.photo ? String(t.photo || "").trim() : "";
+    const photoHtml = photoUrl
+      ? '<div class="speciesPhotoWrap"><img class="speciesPhoto" src="' +
+        escHtml(photoUrl) +
+        '" alt="' +
+        escHtml(t.name) +
+        '"></div>'
+      : "";
+
+    // ORDER:
+    // name + range
+    // bullets
+    // paragraphs (spawn habits, extra notes)
+    // photo LAST
     box.innerHTML =
       "<strong>" +
       escHtml(t.name) +
@@ -2473,7 +2571,9 @@ function renderSpeciesTips() {
       "</span>" +
       '<ul class="list">' +
       lis +
-      "</ul>";
+      "</ul>" +
+      parasHtml +
+      photoHtml;
   }
 
   sel.addEventListener("change", function () {
@@ -2610,5 +2710,5 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 // ============================
-// app.js (PART 4 OF 4) END
+// app.js (PART 5 OF 5) END
 // ============================

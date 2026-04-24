@@ -23,7 +23,7 @@
   - Improved cold/caution logic: ~43F days should be at least CAUTION (implemented in PART 3).
 */
 
-const APP_VERSION = "1.1.4";
+const APP_VERSION = "1.1.5";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -1932,124 +1932,343 @@ function renderSpeciesTips() {
   const page = pageEl();
 
   const tips = [
-  {
-  name: "Lake Trout",
-  range: "38 to 55 F (cold water species)",
+// =====================
+// BASS
+// =====================
+{
+  name: "Largemouth Bass",
+  range: "55 to 75 F",
   bullets: [
-    "Target deep water near structure like ledges, humps, and drop-offs.",
-    "Use downriggers or heavy weights to stay near bottom where they feed.",
-    "Trolling spoons, tubes, or large swimbaits works well.",
-    "Early season they may be shallower, but move deep as water warms.",
-    "Watch sonar closely. Lake trout often hug bottom tightly.",
-    "Slow presentations near bottom usually outperform fast retrieves."
+    "Pre-spawn: stage in 5–15 ft near flats.",
+    "Spawn: shallow beds near cover.",
+    "Post-spawn: target nearby cover and shade.",
+    "Summer: fish deeper midday, shallow early/late.",
+    "Fall: follow baitfish into shallows.",
+    "Use plastics, jigs, and topwater."
   ]
 },
 {
-  name: "Walleye",
-  range: "45 to 70 F (active feeding)",
+  name: "Smallmouth Bass",
+  range: "50 to 70 F",
   bullets: [
-    "Low light periods are best: early morning, evening, and overcast days.",
-    "Target points, flats, and drop-offs near current or structure.",
-    "Trolling crankbaits or drifting with jigs and live bait are effective.",
-    "Wind helps by pushing baitfish and activating feeding.",
-    "During the day, fish deeper or in shaded areas.",
-    "Subtle bites are common. Use sensitive rods and stay alert."
+    "Rocky points and structure are key.",
+    "Wind improves bite significantly.",
+    "Spawn on gravel in shallow water.",
+    "Post-spawn: move deeper to humps and ledges.",
+    "Use crankbaits, tubes, and drop shots.",
+    "Clear water requires finesse."
   ]
 },
 {
-  name: "Crappie",
-  range: "55 to 75 F (most active)",
+  name: "Spotted Bass",
+  range: "55 to 75 F",
   bullets: [
-    "Look for structure like brush piles, docks, and submerged trees.",
-    "Use small jigs or soft plastics under a bobber.",
-    "Spring spawn brings crappie shallow and easier to locate.",
-    "Slow presentations work best. Let the bait sit in the strike zone.",
-    "Schools can be tight. Once you find one, stay there.",
-    "Light line increases bites significantly."
+    "Prefer deeper, clearer water.",
+    "Relate to points and drop-offs.",
+    "Use finesse rigs like drop shot.",
+    "Often school in mid-depth.",
+    "Consistent retrieves work well.",
+    "Active around structure."
   ]
 },
 {
-  name: "Bluegill / Sunfish",
-  range: "60 to 80 F (peak activity)",
+  name: "White Bass",
+  range: "55 to 75 F",
   bullets: [
-    "Target shallow areas near weeds, docks, and shoreline cover.",
-    "Use small hooks with worms, insects, or tiny plastics.",
-    "Great for steady action, especially in warm water.",
-    "Fish slow and let bait sit. They often nibble before committing.",
-    "During spawn, look for beds in shallow water.",
-    "Ultralight gear makes it more fun and increases sensitivity."
+    "Schooling fish that chase bait.",
+    "Look for surface feeding activity.",
+    "Use spoons, spinners, and swimbaits.",
+    "Fish open water and points.",
+    "Fast retrieves trigger strikes.",
+    "Great for high action."
   ]
 },
 {
-  name: "Steelhead",
-  range: "40 to 55 F (optimal conditions)",
+  name: "Yellow Bass",
+  range: "60 to 80 F",
   bullets: [
-    "Focus on current seams, deeper runs, and tailouts in rivers.",
-    "Use drift fishing, float fishing, or trolling depending on water.",
-    "Bright lures and bait work well in stained water.",
-    "Stealth matters in clear water. Use lighter line and natural presentation.",
-    "Weather changes and rising water can trigger bites.",
-    "Be ready for aggressive strikes and strong fights."
+    "Smaller schooling bass species.",
+    "Use small jigs and bait.",
+    "Found near shallow structure.",
+    "Often mixed with panfish.",
+    "Light tackle improves success.",
+    "Consistent bites when located."
+  ]
+},
+{
+  name: "Rock Bass",
+  range: "55 to 75 F",
+  bullets: [
+    "Prefer rocky areas and structure.",
+    "Use small jigs and worms.",
+    "Aggressive and easy to catch.",
+    "Often found with smallmouth.",
+    "Fish near bottom.",
+    "Reliable action species."
+  ]
+},
+
+// =====================
+// SALMON
+// =====================
+{
+  name: "Chinook Salmon",
+  range: "42 to 58 F",
+  bullets: [
+    "Troll 2.2–3.0 mph with flashers.",
+    "Follow bait and temperature bands.",
+    "Fish deeper with weight or downriggers.",
+    "Early morning is best.",
+    "Adjust depth constantly.",
+    "Strong fighters, use heavy gear."
   ]
 },
 {
   name: "Coho Salmon",
-  range: "45 to 60 F (active feeding)",
+  range: "45 to 60 F",
   bullets: [
-    "Troll with flashers and hoochies or spoons at moderate speeds.",
-    "Coho are aggressive and often hit higher in the water column.",
-    "Look for baitfish schools and surface activity.",
-    "Early morning and late evening are prime times.",
-    "Vary speed and direction to trigger reaction bites.",
-    "Bright colors and UV patterns often perform well."
+    "More aggressive than Chinook.",
+    "Often higher in water column.",
+    "Use spoons and hoochies.",
+    "Target bait schools.",
+    "Vary speed to trigger bites.",
+    "Great action species."
   ]
 },
 {
-  name: "Yellow Perch",
-  range: "45 to 65 F (active feeding)",
+  name: "Sockeye Salmon",
+  range: "45 to 60 F",
   bullets: [
-    "Schooling fish. Once you find one, there are usually many.",
-    "Fish near bottom using small jigs tipped with bait.",
-    "Look for flats, drop-offs, and weed edges.",
-    "Vertical jigging is very effective once located.",
-    "Use light tackle for better sensitivity.",
-    "Electronics help locate schools quickly."
+    "Often targeted during river runs.",
+    "Use flossing or drift rigs.",
+    "Travel in schools.",
+    "Look for current seams.",
+    "Early morning can help.",
+    "Check regulations carefully."
   ]
 },
 {
-  name: "Brown Trout",
-  range: "45 to 65 F (most active)",
+  name: "Pink Salmon",
+  range: "45 to 60 F",
   bullets: [
-    "More aggressive than rainbows, especially in low light.",
-    "Target structure like logs, rocks, and drop-offs.",
-    "Use jerkbaits, spinners, and crankbaits.",
-    "Early morning, late evening, and night can be best.",
-    "Bigger fish often stay deeper during the day.",
-    "Stealth and natural presentation improve success."
+    "Aggressive and easier to catch.",
+    "Use small spoons and jigs.",
+    "Found near shore and river mouths.",
+    "Schooling behavior.",
+    "Great for beginners.",
+    "High action during runs."
+  ]
+},
+{
+  name: "Chum Salmon",
+  range: "45 to 60 F",
+  bullets: [
+    "Strong and powerful fighters.",
+    "Use jigs, bait, or flies.",
+    "Target slower current edges.",
+    "Less picky but require good presentation.",
+    "Peak during runs.",
+    "Often underrated species."
+  ]
+},
+{
+  name: "Kokanee Salmon",
+  range: "45 to 60 F",
+  bullets: [
+    "Troll 1.0–1.5 mph.",
+    "Use dodgers and small hoochies.",
+    "Stay on schools using sonar.",
+    "Color and scent matter.",
+    "Early morning is best.",
+    "Turns trigger bites."
+  ]
+},
+
+// =====================
+// TROUT
+// =====================
+{
+  name: "Rainbow Trout",
+  range: "45 to 65 F",
+  bullets: [
+    "Active and widespread species.",
+    "Troll early, go deeper midday.",
+    "Use spoons and spinners.",
+    "Target cooler water zones.",
+    "Windblown shores can be productive.",
+    "Good for casting or trolling."
+  ]
+},
+{
+  name: "Lake Trout",
+  range: "38 to 55 F",
+  bullets: [
+    "Stay deep near bottom.",
+    "Use heavy weights or downriggers.",
+    "Target structure like ledges.",
+    "Slow trolling or jigging works.",
+    "Watch sonar closely.",
+    "Bigger fish stay deeper."
   ]
 },
 {
   name: "Cutthroat Trout",
-  range: "45 to 65 F (ideal range)",
+  range: "45 to 65 F",
   bullets: [
-    "Often found in shallower water than other trout.",
-    "Use small spinners, spoons, or flies.",
-    "Active feeders that respond well to moving baits.",
-    "Look near shorelines, especially with structure or current.",
-    "Early and late in the day produce best results.",
-    "Light line and finesse presentations work well."
+    "Often found shallow.",
+    "Aggressive feeders.",
+    "Use small spinners or flies.",
+    "Target shoreline and structure.",
+    "Active early and late.",
+    "Light tackle works best."
+  ]
+},
+{
+  name: "Brown Trout",
+  range: "45 to 65 F",
+  bullets: [
+    "Prefer low light conditions.",
+    "Target structure and cover.",
+    "Use jerkbaits and spinners.",
+    "Often deeper during the day.",
+    "Aggressive strikes.",
+    "Stealth improves success."
+  ]
+},
+{
+  name: "Brook Trout",
+  range: "45 to 60 F",
+  bullets: [
+    "Prefer colder water.",
+    "Found in small lakes and streams.",
+    "Use small lures and bait.",
+    "Active feeders.",
+    "Shallow and visible at times.",
+    "Great early season fishing."
+  ]
+},
+{
+  name: "Bull Trout",
+  range: "40 to 55 F",
+  bullets: [
+    "Protected species in many areas.",
+    "Prefer cold, clean water.",
+    "Target deep pools and structure.",
+    "Use large lures or bait.",
+    "Handle with care if caught.",
+    "Often found with lake trout."
+  ]
+},
+
+// =====================
+// PIKE / MUSKY
+// =====================
+{
+  name: "Northern Pike",
+  range: "50 to 70 F",
+  bullets: [
+    "Ambush predator near weeds.",
+    "Use spoons and spinnerbaits.",
+    "Pause retrieves.",
+    "Cloudy days are best.",
+    "Use a leader.",
+    "Aggressive strikes."
+  ]
+},
+{
+  name: "Tiger Muskie",
+  range: "55 to 75 F",
+  bullets: [
+    "Low density predator.",
+    "Use large swimbaits and jerkbaits.",
+    "Target structure and weed edges.",
+    "Figure-8 near boat.",
+    "Low light is best.",
+    "Heavy gear required."
+  ]
+},
+
+// =====================
+// PANFISH
+// =====================
+{
+  name: "Bluegill",
+  range: "60 to 80 F",
+  bullets: [
+    "Found near shallow cover.",
+    "Use worms and small hooks.",
+    "Spawn in shallow beds.",
+    "Fish slow.",
+    "Great action species.",
+    "Ultralight gear works best."
+  ]
+},
+{
+  name: "Crappie",
+  range: "55 to 75 F",
+  bullets: [
+    "Target structure like docks and brush.",
+    "Use jigs or minnows.",
+    "Spawn brings fish shallow.",
+    "Slow presentation.",
+    "Stay on schools.",
+    "Move deeper post-spawn."
+  ]
+},
+
+// =====================
+// CATFISH
+// =====================
+{
+  name: "Channel Catfish",
+  range: "60 to 80 F",
+  bullets: [
+    "Best at night.",
+    "Use cut bait or stink bait.",
+    "Fish bottom in deeper water.",
+    "Let fish commit before setting hook.",
+    "Warm water increases activity.",
+    "Ignore small taps."
   ]
 },
 {
   name: "Bullhead Catfish",
-  range: "60 to 80 F (peak activity)",
+  range: "60 to 80 F",
   bullets: [
-    "Similar to channel cats but often smaller and more aggressive.",
-    "Use worms, cut bait, or stink bait.",
-    "Fish near bottom in calm or slow-moving water.",
-    "Any bite should be checked quickly, especially compared to channel cats.",
-    "Night fishing is very productive.",
-    "Simple rigs work well. No need to overcomplicate."
+    "More aggressive than channel cats.",
+    "Check every bite.",
+    "Use worms or bait.",
+    "Fish shallow to mid-depth.",
+    "Active at night.",
+    "Simple rigs work best."
+  ]
+},
+
+// =====================
+// SUCKERS
+// =====================
+{
+  name: "Sucker Fish",
+  range: "40 to 65 F",
+  bullets: [
+    "Bottom feeders.",
+    "Use worms or bait rigs.",
+    "Target slow water.",
+    "Common in lakes and rivers.",
+    "Light tackle helps.",
+    "Steady action species."
+  ]
+},
+{
+  name: "Longnose Sucker",
+  range: "40 to 60 F",
+  bullets: [
+    "Common in rivers.",
+    "Use bottom rigs with worms.",
+    "Target deeper pools.",
+    "Active in spring.",
+    "Subtle bites.",
+    "Simple setups work."
   ]
 }
 ];

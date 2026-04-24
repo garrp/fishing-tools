@@ -984,7 +984,6 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
         placeholder="Example: Spokane, WA or 99201 or Hauser Lake" />
 
       <div class="btnRow">
-        <button id="${placeKey}_search">Search place</button>
         <button id="${placeKey}_gps">Use my location</button>
       </div>
 

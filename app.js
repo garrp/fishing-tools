@@ -23,7 +23,7 @@
   - Improved cold/caution logic: ~43F days should be at least CAUTION (implemented in PART 3).
 */
 
-const APP_VERSION = "1.1.7";
+const APP_VERSION = "Beta 1.0";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 
@@ -984,7 +984,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
         placeholder="Example: Spokane, WA or 99201 or Hauser Lake" />
 
       <div class="btnRow">
-        <button id="${placeKey}_gps">Use my location</button>
+                <button id="${placeKey}_gps">Use my location</button>
       </div>
 
       <div id="${placeKey}_matches" style="margin-top:10px;"></div>

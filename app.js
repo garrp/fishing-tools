@@ -1933,101 +1933,125 @@ function renderSpeciesTips() {
 
   const tips = [
   {
-    name: "Largemouth Bass",
-    range: "55 to 75 F (most active)",
-    bullets: [
-      "Early morning and evening: topwater, frogs, and buzzbaits shine when fish are feeding shallow.",
-      "Midday: target shade, docks, laydowns, and weed edges using jigs, Texas rigs, or wacky rigs.",
-      "Pre-spawn: focus on staging areas just outside spawning flats in 5 to 15 feet of water.",
-      "Post-spawn: fish are often guarding fry or recovering, so slow presentations work best.",
-      "Wind can push bait into pockets and shorelines, making those areas high percentage.",
-      "Water clarity matters: use natural colors in clear water and darker or brighter colors in stained water."
-    ]
-  },
-  {
-    name: "Smallmouth Bass",
-    range: "50 to 70 F (most active)",
-    bullets: [
-      "Focus on rocky structure: points, humps, and drop-offs are key holding areas.",
-      "Wind is your friend. It activates smallmouth and positions them on windblown banks.",
-      "Use moving baits like crankbaits and swimbaits to cover water, then slow down with jigs or drop shots.",
-      "Cold water: fish deeper and slow presentations down near bottom structure.",
-      "Clear water means longer casts and more natural presentations.",
-      "In summer, look for deeper schools near structure in 15 to 40 feet depending on the lake."
-    ]
-  },
-  {
-    name: "Trout (rainbow)",
-    range: "45 to 65 F (most active)",
-    bullets: [
-      "Early morning trolling is consistent, especially with spoons, spinners, or wedding ring setups.",
-      "As the sun rises, trout often move deeper. Adjust depth with weights or downriggers.",
-      "Look for inlets, cooler water, and oxygen-rich areas, especially in summer.",
-      "Wind can stack food along shorelines, making those areas productive.",
-      "Match lure size to local forage. Smaller presentations usually produce better.",
-      "In clear lakes, lighter line and longer setbacks improve bite rates."
-    ]
-  },
-  {
-    name: "Kokanee",
-    range: "45 to 60 F (best comfort)",
-    bullets: [
-      "Troll slow, typically around 1.0 to 1.5 mph, adjusting speed until you find the bite.",
-      "Use a dodger with a small spinner or hoochie, usually tipped with corn and scent.",
-      "Depth control is everything. Stay on suspended schools using sonar.",
-      "Early morning is best, but kokanee can bite throughout the day if you stay on fish.",
-      "Color matters. Rotate through pink, orange, chartreuse, and UV patterns.",
-      "Make wide turns while trolling. Often bites happen when speed changes on the inside rod."
-    ]
-  },
-  {
-    name: "Chinook Salmon",
-    range: "42 to 58 F (target water temps)",
-    bullets: [
-      "Troll faster than kokanee, typically around 2.2 to 3.0 mph depending on gear.",
-      "Use flashers paired with hoochies or cut bait rigs for best attraction.",
-      "Target bait and temperature bands. Chinook follow food more than structure.",
-      "Early morning and low light periods are most productive.",
-      "Use heavier gear and leaders. These fish hit hard and fight deep.",
-      "Adjust depth often until you find fish. Once you get a bite, stay in that zone."
-    ]
-  },
-  {
-    name: "Northern Pike",
-    range: "50 to 70 F (most active)",
-    bullets: [
-      "Focus on shallow weedy areas, especially in spring and early summer.",
-      "Use flashy, aggressive lures like spinnerbaits, spoons, and large swimbaits.",
-      "Pike are ambush predators. Target edges of weed lines and structure transitions.",
-      "Cloudy days and low light increase activity and shallow movement.",
-      "Use a leader to prevent bite-offs. Pike teeth will cut standard line easily.",
-      "Work lures with pauses. Many strikes happen when the bait stops or changes direction."
-    ]
-  },
-  {
-    name: "Perch",
-    range: "45 to 65 F (active feeding)",
-    bullets: [
-      "Find schools near bottom in 10 to 40 feet depending on lake conditions.",
-      "Use small jigs tipped with bait like worms or soft plastics.",
-      "Vertical jigging works best once you locate a school.",
-      "Electronics help a lot. Once you find them, you can catch multiple quickly.",
-      "Perch often relate to structure like drop-offs, humps, and flats.",
-      "Light line improves sensitivity and increases bites."
-    ]
-  },
-  {
-    name: "Catfish",
-    range: "60 to 80 F (peak activity)",
-    bullets: [
-      "Best bite is usually at night or low light periods.",
-      "Use strong scent baits like cut bait, chicken, or prepared stink baits.",
-      "Focus on deeper holes, slow current areas, and structure.",
-      "Warm water increases feeding activity significantly.",
-      "Let bait sit. Catfish often take time before committing.",
-      "Pay attention to subtle bites. Not all hits are aggressive."
-    ]
-  }
+  name: "Lake Trout",
+  range: "38 to 55 F (cold water species)",
+  bullets: [
+    "Target deep water near structure like ledges, humps, and drop-offs.",
+    "Use downriggers or heavy weights to stay near bottom where they feed.",
+    "Trolling spoons, tubes, or large swimbaits works well.",
+    "Early season they may be shallower, but move deep as water warms.",
+    "Watch sonar closely. Lake trout often hug bottom tightly.",
+    "Slow presentations near bottom usually outperform fast retrieves."
+  ]
+},
+{
+  name: "Walleye",
+  range: "45 to 70 F (active feeding)",
+  bullets: [
+    "Low light periods are best: early morning, evening, and overcast days.",
+    "Target points, flats, and drop-offs near current or structure.",
+    "Trolling crankbaits or drifting with jigs and live bait are effective.",
+    "Wind helps by pushing baitfish and activating feeding.",
+    "During the day, fish deeper or in shaded areas.",
+    "Subtle bites are common. Use sensitive rods and stay alert."
+  ]
+},
+{
+  name: "Crappie",
+  range: "55 to 75 F (most active)",
+  bullets: [
+    "Look for structure like brush piles, docks, and submerged trees.",
+    "Use small jigs or soft plastics under a bobber.",
+    "Spring spawn brings crappie shallow and easier to locate.",
+    "Slow presentations work best. Let the bait sit in the strike zone.",
+    "Schools can be tight. Once you find one, stay there.",
+    "Light line increases bites significantly."
+  ]
+},
+{
+  name: "Bluegill / Sunfish",
+  range: "60 to 80 F (peak activity)",
+  bullets: [
+    "Target shallow areas near weeds, docks, and shoreline cover.",
+    "Use small hooks with worms, insects, or tiny plastics.",
+    "Great for steady action, especially in warm water.",
+    "Fish slow and let bait sit. They often nibble before committing.",
+    "During spawn, look for beds in shallow water.",
+    "Ultralight gear makes it more fun and increases sensitivity."
+  ]
+},
+{
+  name: "Steelhead",
+  range: "40 to 55 F (optimal conditions)",
+  bullets: [
+    "Focus on current seams, deeper runs, and tailouts in rivers.",
+    "Use drift fishing, float fishing, or trolling depending on water.",
+    "Bright lures and bait work well in stained water.",
+    "Stealth matters in clear water. Use lighter line and natural presentation.",
+    "Weather changes and rising water can trigger bites.",
+    "Be ready for aggressive strikes and strong fights."
+  ]
+},
+{
+  name: "Coho Salmon",
+  range: "45 to 60 F (active feeding)",
+  bullets: [
+    "Troll with flashers and hoochies or spoons at moderate speeds.",
+    "Coho are aggressive and often hit higher in the water column.",
+    "Look for baitfish schools and surface activity.",
+    "Early morning and late evening are prime times.",
+    "Vary speed and direction to trigger reaction bites.",
+    "Bright colors and UV patterns often perform well."
+  ]
+},
+{
+  name: "Yellow Perch",
+  range: "45 to 65 F (active feeding)",
+  bullets: [
+    "Schooling fish. Once you find one, there are usually many.",
+    "Fish near bottom using small jigs tipped with bait.",
+    "Look for flats, drop-offs, and weed edges.",
+    "Vertical jigging is very effective once located.",
+    "Use light tackle for better sensitivity.",
+    "Electronics help locate schools quickly."
+  ]
+},
+{
+  name: "Brown Trout",
+  range: "45 to 65 F (most active)",
+  bullets: [
+    "More aggressive than rainbows, especially in low light.",
+    "Target structure like logs, rocks, and drop-offs.",
+    "Use jerkbaits, spinners, and crankbaits.",
+    "Early morning, late evening, and night can be best.",
+    "Bigger fish often stay deeper during the day.",
+    "Stealth and natural presentation improve success."
+  ]
+},
+{
+  name: "Cutthroat Trout",
+  range: "45 to 65 F (ideal range)",
+  bullets: [
+    "Often found in shallower water than other trout.",
+    "Use small spinners, spoons, or flies.",
+    "Active feeders that respond well to moving baits.",
+    "Look near shorelines, especially with structure or current.",
+    "Early and late in the day produce best results.",
+    "Light line and finesse presentations work well."
+  ]
+},
+{
+  name: "Bullhead Catfish",
+  range: "60 to 80 F (peak activity)",
+  bullets: [
+    "Similar to channel cats but often smaller and more aggressive.",
+    "Use worms, cut bait, or stink bait.",
+    "Fish near bottom in calm or slow-moving water.",
+    "Any bite should be checked quickly, especially compared to channel cats.",
+    "Night fishing is very productive.",
+    "Simple rigs work well. No need to overcomplicate."
+  ]
+}
 ];
   appendHtml(
     page,

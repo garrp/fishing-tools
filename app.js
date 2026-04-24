@@ -23,7 +23,7 @@
   - Improved cold/caution logic: ~43F days should be at least CAUTION (implemented in PART 3).
 */
 
-const APP_VERSION = "1.1.3";
+const APP_VERSION = "1.1.4";
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
 

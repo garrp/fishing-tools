@@ -1966,146 +1966,135 @@ function renderDepthCalculator() {
 function renderSpeciesTips() {
   const page = pageEl();
 
-const tips = [
-  {
-    name: "Largemouth Bass",
-    range: "55 to 75 F",
-    text:
-      "Largemouth bass are shallow, cover-oriented fish that respond strongly to seasonal water temps. In early spring (45–55 F), they stage just outside spawning flats near drop-offs. Pre-spawn (55–65 F), they push shallow into warming bays and protected areas. Spawn occurs around 60–70 F in calm, shallow water. Post-spawn, many fish recover near cover and guard fry. Summer (70–80+ F), they shift to shade, weeds, docks, or deeper edges during the day and feed shallow early and late. Fall brings aggressive feeding as temps drop back into the 60s.",
-    tips:
-      "Target warming water first in spring. Fish slow in cold water. During summer, fish low light or heavy cover. Flip docks, weed edges, and laydowns. Use electronics less and cover more water early, then slow down once fish are located.",
-    baits:
-      "Wacky rigs, Texas rigs, jigs, frogs, chatterbaits, spinnerbaits, crankbaits, and topwater."
-  },
-
-  {
-    name: "Smallmouth Bass",
-    range: "50 to 70 F",
-    text:
-      "Smallmouth bass prefer cooler, clearer water and relate heavily to rock and structure. Early spring (40–50 F), they hold deep on points and staging areas. Pre-spawn (50–60 F), they move onto gravel flats and rocky banks. Spawn occurs around 55–65 F. Post-spawn fish often suspend or move slightly deeper. Summer fish (65–75 F) relate to humps, ledges, and current, often chasing bait. Fall brings aggressive feeding as temps drop.",
-    tips:
-      "Fish windblown banks whenever possible. Smallmouth feed better in chop. Use lighter line in clear water. Long casts matter. Focus on rock transitions, points, and depth changes.",
-    baits:
-      "Tubes, drop shots, Ned rigs, jerkbaits, crankbaits, small swimbaits, finesse jigs."
-  },
-
-  {
-    name: "Kokanee",
-    range: "45 to 60 F",
-    text:
-      "Kokanee are temperature and depth driven. They typically stay in 48–54 F water. In spring, they can be higher in the column. As lakes stratify, they follow thermoclines deeper, often 20–80+ feet depending on lake conditions. They rarely relate to structure and instead suspend over open water following plankton.",
-    tips:
-      "Watch your fish finder closely. Depth control is everything. Keep gear slightly above fish. Troll consistently (1.0–1.5 mph). Turns and speed changes trigger bites. Scent is critical.",
-    baits:
-      "Dodgers, hoochies, wedding rings, corn, scent, spinners, and small spoons."
-  },
-
-  {
-    name: "Rainbow Trout",
-    range: "45 to 65 F",
-    text:
-      "Rainbow trout are highly mobile and follow food. In cold water (40s–50s), they are often near the surface or shoreline. As temps rise above 60 F, they move deeper or seek cooler inflows. Spring and fall are peak shallow-water periods, while summer pushes them deeper.",
-    tips:
-      "Fish windblown shorelines. Troll shallow early in the season. Adjust depth constantly as temps change. Cover water until you find fish.",
-    baits:
-      "Spoons, spinners, wedding rings, flies, worms, PowerBait, and trolling flies."
-  },
-
-  {
-    name: "Lake Trout",
-    range: "38 to 52 F",
-    text:
-      "Lake trout prefer cold, deep water. In spring, they may move shallow briefly while water is cold. Once temps rise, they move deep (40–150+ feet). They relate to structure like points, humps, and drop-offs but are often near bait schools.",
-    tips:
-      "Use electronics heavily. Vertical jig when fish are marked. Troll slow and deep. Stay near structure and bait.",
-    baits:
-      "Heavy jigs, tubes, spoons, deep plugs, and baitfish imitations."
-  },
-
-  {
-    name: "Chinook Salmon",
-    range: "42 to 55 F",
-    text:
-      "Chinook follow bait and temperature bands. They often hold deeper than kokanee and require precise depth control. Early morning and low light are key feeding windows. As the day progresses, they often go deeper or become less active.",
-    tips:
-      "Fish early. Stay on bait. Use your electronics constantly. Adjust depth frequently. Be patient and methodical.",
-    baits:
-      "Flashers, dodgers, hoochies, spoons, plugs, and cut bait where legal."
-  },
-
-  {
-    name: "Northern Pike",
-    range: "50 to 70 F",
-    text:
-      "Pike are ambush predators that prefer shallow, weedy environments. In early spring (post-ice), they move into very shallow water to spawn. As water warms, they transition to weed edges, bays, and structure near deeper water.",
-    tips:
-      "Target weeds and edges. Retrieve baits steadily with occasional pauses. Use leaders to prevent bite-offs.",
-    baits:
-      "Spinnerbaits, spoons, jerkbaits, swimbaits, chatterbaits."
-  },
-
-  {
-    name: "Walleye",
-    range: "45 to 70 F",
-    text:
-      "Walleye are light-sensitive and feed best in low light. In spring, they spawn in current and move shallow afterward. Summer fish often hold deeper or on structure during the day, feeding shallow at night.",
-    tips:
-      "Fish early morning, evening, or night. Target structure and current. Move slowly and stay near bottom.",
-    baits:
-      "Jigs, plastics, crawlers, crankbaits, bottom bouncers."
-  },
-
-  {
-    name: "Yellow Perch",
-    range: "50 to 70 F",
-    text:
-      "Perch are schooling fish that move based on season and food. Spring fish are often shallow. Summer fish may move deeper or suspend. Fall brings them back into feeding schools.",
-    tips:
-      "Once you catch one, stay put. Schools are tight. Use light tackle and small presentations.",
-    baits:
-      "Small jigs, worms, maggots, tiny plastics."
-  },
-
-  {
-    name: "Crappie",
-    range: "55 to 70 F",
-    text:
-      "Crappie relate to cover like brush, docks, and timber. Spring spawning pushes them shallow. After spawning, they suspend around structure and can be tricky to locate.",
-    tips:
-      "Fish slow. Use electronics to find suspended fish. Vertical presentations work well.",
-    baits:
-      "Small jigs, tubes, minnows, bobbers."
-  },
-
-  {
-    name: "Bluegill",
-    range: "65 to 80 F",
-    text:
-      "Bluegill thrive in warm, shallow water and are often found near weeds and cover. They spawn in colonies in shallow areas during warm months.",
-    tips:
-      "Use small hooks and light tackle. Fish slightly deeper for larger fish.",
-    baits:
-      "Worms, small jigs, micro plastics."
-  },
-
-  {
-    name: "Channel Catfish",
-    range: "65 to 85 F",
-    text:
-      "Channel catfish are scent-driven and often feed heavily in warm water, especially at night. They relate to current, holes, and feeding lanes.",
-    tips:
-      "Fish evenings and nights. Use strong scent baits. Let fish take the bait before setting.",
-    baits:
-      "Cut bait, worms, stink bait, shrimp, chicken liver."
-  }
-];
+  const tips = [
+    {
+      name: "Largemouth Bass",
+      range: "55 to 75 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Largemouth_bass_01.jpg",
+      credit: "Largemouth bass 01 - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Largemouth_bass_01.jpg",
+      text: "Largemouth bass are shallow, cover-oriented fish. Early spring they stage deeper, then move shallow to spawn around 60 to 70 F. In summer they hold in shade, weeds, and deeper edges.",
+      tips: "Fish warming water in spring. Focus on shade and structure in summer. Early and late are best.",
+      baits: "Wacky rigs, Texas rigs, jigs, frogs, chatterbaits, spinnerbaits."
+    },
+    {
+      name: "Smallmouth Bass",
+      range: "50 to 70 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Smallmouth_bass.jpg",
+      credit: "Smallmouth bass - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Smallmouth_bass.jpg",
+      text: "Smallmouth relate to rock and depth changes. They spawn around 55 to 65 F and stay more aggressive in current and wind.",
+      tips: "Fish windblown banks and rocky points. Long casts help in clear water.",
+      baits: "Tubes, drop shots, Ned rigs, jerkbaits, crankbaits."
+    },
+    {
+      name: "Kokanee",
+      range: "45 to 60 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Kokanee_Salmon.jpg",
+      credit: "Kokanee salmon - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Kokanee_Salmon.jpg",
+      text: "Kokanee are suspended fish that follow temperature and plankton. They typically hold in 48 to 54 F water.",
+      tips: "Depth control is critical. Stay slightly above fish and troll consistently.",
+      baits: "Dodgers, hoochies, corn, scent."
+    },
+    {
+      name: "Rainbow Trout",
+      range: "45 to 65 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Rainbow_Trout.jpg",
+      credit: "Rainbow trout - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Rainbow_Trout.jpg",
+      text: "Rainbow trout move with temperature and food. Shallow in cooler months, deeper in summer.",
+      tips: "Target windblown shores. Adjust depth as temps change.",
+      baits: "Spoons, spinners, worms, PowerBait."
+    },
+    {
+      name: "Lake Trout",
+      range: "38 to 52 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Lake_trout.jpg",
+      credit: "Lake trout - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Lake_trout.jpg",
+      text: "Lake trout prefer deep cold water. They follow bait and structure at depth.",
+      tips: "Use electronics heavily. Fish deep and slow.",
+      baits: "Jigs, tubes, spoons."
+    },
+    {
+      name: "Chinook Salmon",
+      range: "42 to 55 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Chinook_salmon.jpg",
+      credit: "Chinook salmon - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Chinook_salmon.jpg",
+      text: "Chinook follow bait and temperature bands and are often deep.",
+      tips: "Fish early. Stay on bait. Depth control matters most.",
+      baits: "Flashers, hoochies, spoons."
+    },
+    {
+      name: "Northern Pike",
+      range: "50 to 70 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Northern_pike.jpg",
+      credit: "Northern pike - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Northern_pike.jpg",
+      text: "Pike are ambush predators in weeds and shallow water.",
+      tips: "Target weed edges and bays. Use leaders.",
+      baits: "Spinnerbaits, spoons, jerkbaits."
+    },
+    {
+      name: "Walleye",
+      range: "45 to 70 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Walleye.jpg",
+      credit: "Walleye - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Walleye.jpg",
+      text: "Walleye feed best in low light and relate to structure.",
+      tips: "Fish early or late. Stay near bottom.",
+      baits: "Jigs, crawlers, crankbaits."
+    },
+    {
+      name: "Yellow Perch",
+      range: "50 to 70 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Yellow_perch.jpg",
+      credit: "Yellow perch - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Yellow_perch.jpg",
+      text: "Perch school tightly and move with season.",
+      tips: "Stay where you catch one. Use light tackle.",
+      baits: "Small jigs, worms."
+    },
+    {
+      name: "Crappie",
+      range: "55 to 70 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Crappie.jpg",
+      credit: "Crappie - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Crappie.jpg",
+      text: "Crappie relate to cover and suspend after spawn.",
+      tips: "Fish slow. Target structure.",
+      baits: "Jigs, minnows."
+    },
+    {
+      name: "Bluegill",
+      range: "65 to 80 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Bluegill.jpg",
+      credit: "Bluegill - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Bluegill.jpg",
+      text: "Bluegill prefer warm shallow water and cover.",
+      tips: "Use light tackle. Fish shallow.",
+      baits: "Worms, small jigs."
+    },
+    {
+      name: "Channel Catfish",
+      range: "65 to 85 F",
+      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Channel_catfish.jpg",
+      credit: "Channel catfish - Wikimedia Commons",
+      source: "https://commons.wikimedia.org/wiki/File:Channel_catfish.jpg",
+      text: "Catfish rely on scent and feed heavily at night.",
+      tips: "Fish evenings. Use strong scent baits.",
+      baits: "Cut bait, stink bait, worms."
+    }
+  ];
 
   appendHtml(
     page,
     `
     <div class="card">
       <h2>Species Tips</h2>
-      <div class="small muted">Choose a species for quick Northwest fishing guidance.</div>
+      <div class="small muted">Select a species for details.</div>
 
       <div style="margin-top:12px;">
         <div class="fieldLabel">Species</div>
@@ -2120,37 +2109,43 @@ const tips = [
   const select = document.getElementById("species_select");
   const card = document.getElementById("species_card");
 
-  for (let i = 0; i < tips.length; i++) {
+  tips.forEach((t, i) => {
     const opt = document.createElement("option");
-    opt.value = String(i);
-    opt.textContent = tips[i].name;
+    opt.value = i;
+    opt.textContent = t.name;
     select.appendChild(opt);
-  }
+  });
 
-  function renderSelectedSpecies() {
-    const item = tips[Number(select.value)] || tips[0];
+  function renderSelected() {
+    const t = tips[select.value] || tips[0];
 
     card.innerHTML =
       '<div class="card compact">' +
-      "<h3>" +
-      escHtml(item.name) +
-      "</h3>" +
-      '<div class="small muted"><strong>Typical active range:</strong> ' +
-      escHtml(item.range) +
-      "</div>" +
-      '<div class="sectionTitle">How to fish them</div>' +
-      "<p>" +
-      escHtml(item.text) +
-      "</p>" +
-      '<div class="sectionTitle">Good baits</div>' +
-      "<p>" +
-      escHtml(item.baits) +
-      "</p>" +
-      "</div>";
+      '<h3>' + escHtml(t.name) + '</h3>' +
+
+      '<img src="' + escHtml(t.image) + '" style="width:100%;border-radius:12px;margin-top:10px;">' +
+
+      '<div class="small muted" style="margin-top:6px;">' +
+      'Image: <a href="' + escHtml(t.source) + '" target="_blank">View source</a><br>' +
+      escHtml(t.credit) +
+      '</div>' +
+
+      '<div class="small muted" style="margin-top:6px;"><strong>Temp range:</strong> ' + escHtml(t.range) + '</div>' +
+
+      '<div class="sectionTitle">Behavior</div>' +
+      '<p>' + escHtml(t.text) + '</p>' +
+
+      '<div class="sectionTitle">Tips</div>' +
+      '<p>' + escHtml(t.tips) + '</p>' +
+
+      '<div class="sectionTitle">Baits</div>' +
+      '<p>' + escHtml(t.baits) + '</p>' +
+
+      '</div>';
   }
 
-  select.addEventListener("change", renderSelectedSpecies);
-  renderSelectedSpecies();
+  select.addEventListener("change", renderSelected);
+  renderSelected();
 }
 
 // ----------------------------

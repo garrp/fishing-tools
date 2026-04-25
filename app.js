@@ -1944,123 +1944,129 @@ function renderSpeciesTips() {
     {
       name: "Largemouth Bass",
       range: "55 to 75 F",
-      bullets: [
-        "Pre-spawn: target shallow flats, docks, weeds, and protected pockets.",
-        "Spawn: look for beds in shallow protected water. Fish carefully.",
-        "Post-spawn: target shade, docks, fry guarders, and nearby cover.",
-        "Good baits: wacky rigs, Texas rigs, frogs, jigs, chatterbaits, spinnerbaits, and topwater."
-      ]
+      text: "Largemouth bass like weeds, docks, wood, shade, shallow flats, and warm protected pockets. In spring, look for fish moving from deeper staging areas into warmer shallow water. In summer, fish early and late shallow, then move to shade or deeper cover during midday.",
+      baits: "Wacky rigs, Texas rigs, jigs, frogs, chatterbaits, spinnerbaits, crankbaits, and topwater."
     },
     {
       name: "Smallmouth Bass",
       range: "50 to 70 F",
-      bullets: [
-        "Pre-spawn: target rocky points, gravel flats, and staging areas.",
-        "Spawn: look for gravel beds and clear shallow pockets.",
-        "Post-spawn: fish humps, ledges, deeper rock, and windblown banks.",
-        "Good baits: tubes, drop shots, Ned rigs, crankbaits, jerkbaits, and small swimbaits."
-      ]
+      text: "Smallmouth bass often relate to rock, gravel, points, humps, ledges, and windblown banks. They can be more aggressive in clear water but may require longer casts and lighter line. Wind usually helps the bite by breaking up visibility and pushing bait.",
+      baits: "Tubes, drop shots, Ned rigs, jerkbaits, crankbaits, small swimbaits, and finesse jigs."
     },
     {
       name: "Kokanee",
       range: "45 to 60 F",
-      bullets: [
-        "Troll slow, usually around 1.0 to 1.5 mph.",
-        "Watch depth closely because kokanee often suspend.",
-        "Use dodgers, hoochies, spinners, corn, and scent.",
-        "Early and late light can be best, but depth matters all day."
-      ]
+      text: "Kokanee are depth specific and often suspend over deeper water. Watch your electronics, find schools, and keep your gear just above or through the fish. Speed changes, turns, scent, and dodger action can all trigger bites.",
+      baits: "Dodgers, hoochies, wedding rings, small spinners, corn, scent, and small spoons."
     },
     {
       name: "Rainbow Trout",
       range: "45 to 65 F",
-      bullets: [
-        "Spring and fall trout often cruise higher in the water column.",
-        "Summer trout may drop deeper as surface water warms.",
-        "Troll spoons, spinners, small plugs, flies, and wedding rings.",
-        "Bank anglers can do well with bait near points, inlets, and windblown shorelines."
-      ]
+      text: "Rainbow trout cruise higher in the water column during cooler months and often move deeper when surface temps rise. Windblown shorelines, inlets, points, and current edges can all concentrate feeding fish.",
+      baits: "Spoons, spinners, wedding rings, flies, small plugs, worms, PowerBait, and trolling flies."
     },
     {
       name: "Lake Trout",
       range: "38 to 52 F",
-      bullets: [
-        "Look deep near points, shelves, humps, and bait schools.",
-        "Downriggers, heavy jigs, and deep trolling setups help.",
-        "Slow presentations often work best.",
-        "Watch electronics closely because lake trout can be very depth specific."
-      ]
+      text: "Lake trout are often deep, especially in warmer months. Focus on points, shelves, humps, steep breaks, and bait schools. Electronics matter because a few feet of depth can make the difference.",
+      baits: "Heavy jigs, spoons, plugs, downrigger presentations, tube jigs, and baitfish imitations."
     },
     {
       name: "Chinook Salmon",
       range: "42 to 55 F",
-      bullets: [
-        "Target bait schools, temperature breaks, and deeper travel lanes.",
-        "Use flashers, dodgers, hoochies, spoons, plugs, and cut bait where legal.",
-        "Depth control matters more than covering random water.",
-        "Early morning can be strong, especially before boat traffic increases."
-      ]
+      text: "Chinook usually require good depth control and patience. Focus on bait, temperature zones, travel lanes, and low light windows. Early morning is often the best starting point before boat traffic builds.",
+      baits: "Flashers, dodgers, hoochies, spoons, plugs, cut bait where legal, and scent."
     },
     {
       name: "Northern Pike",
       range: "50 to 70 F",
-      bullets: [
-        "Spring pike often use shallow weeds, bays, and warmer backwaters.",
-        "After spawning, target weed edges, ambush points, and channels.",
-        "Use wire or heavy fluorocarbon leaders.",
-        "Good baits: spinnerbaits, spoons, jerkbaits, swimbaits, and chatterbaits."
-      ]
+      text: "Northern pike are ambush predators. In spring, look shallow in bays, weeds, backwaters, and warmer pockets. Later, target weed edges, channels, points, and cover near deeper water.",
+      baits: "Spinnerbaits, spoons, jerkbaits, swimbaits, chatterbaits, and large soft plastics."
     },
     {
       name: "Walleye",
       range: "45 to 70 F",
-      bullets: [
-        "Low light is usually best.",
-        "Target points, flats, drop-offs, current seams, and baitfish.",
-        "Trolling crankbaits and bottom bouncers can cover water well.",
-        "Jigs with plastics, minnows, or crawlers can work when fish are grouped."
-      ]
+      text: "Walleye often feed best in low light. Look for flats, points, drop-offs, current seams, and baitfish. During bright conditions, they may slide deeper or hold tight to structure.",
+      baits: "Jigs, plastics, crawlers, crankbaits, bottom bouncers, blade baits, and trolling plugs."
     },
     {
       name: "Yellow Perch",
       range: "50 to 70 F",
-      bullets: [
-        "Look for schools near weeds, flats, and soft bottom transitions.",
-        "Small jigs, worms, maggots, and perch meat can work well where legal.",
-        "If you catch one, keep working the area because perch school tightly.",
-        "Light line helps when the bite is soft."
-      ]
+      text: "Yellow perch school tightly, so if you catch one, keep working the area. Look near weeds, flats, soft bottom transitions, docks, and deeper basins depending on season.",
+      baits: "Small jigs, worms, maggots, perch meat where legal, tiny spoons, and small plastics."
     },
     {
       name: "Crappie",
       range: "55 to 70 F",
-      bullets: [
-        "Spring crappie move shallow around brush, docks, and weeds.",
-        "Summer fish may suspend near deeper cover.",
-        "Use small jigs, tubes, minnows, and slip bobbers.",
-        "Slow down when the bite gets light."
-      ]
+      text: "Crappie like brush, docks, weeds, timber, and suspended cover. In spring they move shallow, then often suspend deeper in summer. A slow presentation usually beats an aggressive one.",
+      baits: "Small jigs, tubes, minnows, slip bobbers, tiny swimbaits, and hair jigs."
     },
     {
       name: "Bluegill",
       range: "65 to 80 F",
-      bullets: [
-        "Look shallow near weeds, docks, and protected banks.",
-        "Use small hooks, worms, tiny jigs, and bobbers.",
-        "Bigger bluegill often hold slightly deeper than the small ones.",
-        "Great species for simple, fun, light tackle fishing."
-      ]
+      text: "Bluegill are common around weeds, docks, shallow cover, and protected banks. Bigger bluegill often hold a little deeper than the small ones. Light line and small hooks help.",
+      baits: "Worms, tiny jigs, small flies, micro plastics, and bobber rigs."
     },
     {
       name: "Channel Catfish",
       range: "65 to 85 F",
-      bullets: [
-        "Evening and night can be excellent.",
-        "Target channels, flats, current seams, and deeper holes.",
-        "Use cut bait, worms, shrimp, stink bait, or other legal bait.",
-        "Let the fish load the rod before setting the hook, especially with circle hooks."
-      ]
+      text: "Channel catfish feed well in evening, night, and stained water. Target channels, deeper holes, current seams, flats, and areas with scent moving through the water.",
+      baits: "Cut bait, worms, shrimp, stink bait, chicken liver, punch bait, and prepared bait."
     }
+  ];
+
+  appendHtml(
+    page,
+    `
+    <div class="card">
+      <h2>Species Tips</h2>
+      <div class="small muted">Choose a species for quick Northwest fishing guidance.</div>
+
+      <div style="margin-top:12px;">
+        <div class="fieldLabel">Species</div>
+        <select id="species_select"></select>
+      </div>
+
+      <div id="species_card"></div>
+    </div>
+  `
+  );
+
+  const select = document.getElementById("species_select");
+  const card = document.getElementById("species_card");
+
+  for (let i = 0; i < tips.length; i++) {
+    const opt = document.createElement("option");
+    opt.value = String(i);
+    opt.textContent = tips[i].name;
+    select.appendChild(opt);
+  }
+
+  function renderSelectedSpecies() {
+    const item = tips[Number(select.value)] || tips[0];
+
+    card.innerHTML =
+      '<div class="card compact">' +
+      "<h3>" +
+      escHtml(item.name) +
+      "</h3>" +
+      '<div class="small muted"><strong>Typical active range:</strong> ' +
+      escHtml(item.range) +
+      "</div>" +
+      '<div class="sectionTitle">How to fish them</div>' +
+      "<p>" +
+      escHtml(item.text) +
+      "</p>" +
+      '<div class="sectionTitle">Good baits</div>' +
+      "<p>" +
+      escHtml(item.baits) +
+      "</p>" +
+      "</div>";
+  }
+
+  select.addEventListener("change", renderSelectedSpecies);
+  renderSelectedSpecies();
+}
   ];
 
   appendHtml(

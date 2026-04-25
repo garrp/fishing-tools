@@ -21,7 +21,7 @@
   - Home status is now based on wind, gusts, temperature, and cold risk only.
 */
 
-const APP_VERSION = "Beta 1.0";
+const APP_VERSION = "Beta 1.1";
 
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";

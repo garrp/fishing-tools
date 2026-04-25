@@ -1966,128 +1966,128 @@ function renderDepthCalculator() {
 function renderSpeciesTips() {
   const page = pageEl();
 
-  const tips = [
-    {
-      name: "Largemouth Bass",
-      range: "55 to 75 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Largemouth_bass_01.jpg",
-      credit: "Largemouth bass 01 - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Largemouth_bass_01.jpg",
-      text: "Largemouth bass are shallow, cover-oriented fish. Early spring they stage deeper, then move shallow to spawn around 60 to 70 F. In summer they hold in shade, weeds, and deeper edges.",
-      tips: "Fish warming water in spring. Focus on shade and structure in summer. Early and late are best.",
-      baits: "Wacky rigs, Texas rigs, jigs, frogs, chatterbaits, spinnerbaits."
-    },
-    {
-      name: "Smallmouth Bass",
-      range: "50 to 70 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Smallmouth_bass.jpg",
-      credit: "Smallmouth bass - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Smallmouth_bass.jpg",
-      text: "Smallmouth relate to rock and depth changes. They spawn around 55 to 65 F and stay more aggressive in current and wind.",
-      tips: "Fish windblown banks and rocky points. Long casts help in clear water.",
-      baits: "Tubes, drop shots, Ned rigs, jerkbaits, crankbaits."
-    },
-    {
-      name: "Kokanee",
-      range: "45 to 60 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Kokanee_Salmon.jpg",
-      credit: "Kokanee salmon - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Kokanee_Salmon.jpg",
-      text: "Kokanee are suspended fish that follow temperature and plankton. They typically hold in 48 to 54 F water.",
-      tips: "Depth control is critical. Stay slightly above fish and troll consistently.",
-      baits: "Dodgers, hoochies, corn, scent."
-    },
-    {
-      name: "Rainbow Trout",
-      range: "45 to 65 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Rainbow_Trout.jpg",
-      credit: "Rainbow trout - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Rainbow_Trout.jpg",
-      text: "Rainbow trout move with temperature and food. Shallow in cooler months, deeper in summer.",
-      tips: "Target windblown shores. Adjust depth as temps change.",
-      baits: "Spoons, spinners, worms, PowerBait."
-    },
-    {
-      name: "Lake Trout",
-      range: "38 to 52 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Lake_trout.jpg",
-      credit: "Lake trout - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Lake_trout.jpg",
-      text: "Lake trout prefer deep cold water. They follow bait and structure at depth.",
-      tips: "Use electronics heavily. Fish deep and slow.",
-      baits: "Jigs, tubes, spoons."
-    },
-    {
-      name: "Chinook Salmon",
-      range: "42 to 55 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Chinook_salmon.jpg",
-      credit: "Chinook salmon - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Chinook_salmon.jpg",
-      text: "Chinook follow bait and temperature bands and are often deep.",
-      tips: "Fish early. Stay on bait. Depth control matters most.",
-      baits: "Flashers, hoochies, spoons."
-    },
-    {
-      name: "Northern Pike",
-      range: "50 to 70 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Northern_pike.jpg",
-      credit: "Northern pike - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Northern_pike.jpg",
-      text: "Pike are ambush predators in weeds and shallow water.",
-      tips: "Target weed edges and bays. Use leaders.",
-      baits: "Spinnerbaits, spoons, jerkbaits."
-    },
-    {
-      name: "Walleye",
-      range: "45 to 70 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Walleye.jpg",
-      credit: "Walleye - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Walleye.jpg",
-      text: "Walleye feed best in low light and relate to structure.",
-      tips: "Fish early or late. Stay near bottom.",
-      baits: "Jigs, crawlers, crankbaits."
-    },
-    {
-      name: "Yellow Perch",
-      range: "50 to 70 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Yellow_perch.jpg",
-      credit: "Yellow perch - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Yellow_perch.jpg",
-      text: "Perch school tightly and move with season.",
-      tips: "Stay where you catch one. Use light tackle.",
-      baits: "Small jigs, worms."
-    },
-    {
-      name: "Crappie",
-      range: "55 to 70 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Crappie.jpg",
-      credit: "Crappie - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Crappie.jpg",
-      text: "Crappie relate to cover and suspend after spawn.",
-      tips: "Fish slow. Target structure.",
-      baits: "Jigs, minnows."
-    },
-    {
-      name: "Bluegill",
-      range: "65 to 80 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Bluegill.jpg",
-      credit: "Bluegill - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Bluegill.jpg",
-      text: "Bluegill prefer warm shallow water and cover.",
-      tips: "Use light tackle. Fish shallow.",
-      baits: "Worms, small jigs."
-    },
-    {
-      name: "Channel Catfish",
-      range: "65 to 85 F",
-      image: "https://commons.wikimedia.org/wiki/Special:FilePath/Channel_catfish.jpg",
-      credit: "Channel catfish - Wikimedia Commons",
-      source: "https://commons.wikimedia.org/wiki/File:Channel_catfish.jpg",
-      text: "Catfish rely on scent and feed heavily at night.",
-      tips: "Fish evenings. Use strong scent baits.",
-      baits: "Cut bait, stink bait, worms."
-    }
-  ];
+const tips = [
+  {
+    name: "Largemouth Bass",
+    range: "55 to 75 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Largemouth_bass_01.jpg",
+    credit: "Largemouth bass 01 - Wikimedia Commons",
+    source: "https://commons.wikimedia.org/wiki/File:Largemouth_bass_01.jpg",
+    text: "Largemouth bass are cover-oriented fish that use weeds, docks, wood, shade, shallow flats, and warm protected pockets. In early spring, around 45 to 55 F, they often stage outside spawning areas near breaks or deeper cover. From about 55 to 65 F, they push shallow for pre-spawn feeding. Spawning often happens around 60 to 70 F. In summer, they commonly hold in shade, weeds, docks, or deeper edges during the day and feed shallower early and late. In fall, they chase bait more aggressively as water cools back through the 60s.",
+    tips: "In spring, find the warmest protected water first. Fish slowly around cover until the bite improves. In summer, fish early, late, or around shade. Skip empty-looking banks and focus on docks, weed edges, laydowns, pads, and points with quick access to deeper water.",
+    baits: "Wacky rigs, Texas rigs, jigs, frogs, chatterbaits, spinnerbaits, crankbaits, and topwater."
+  },
+  {
+    name: "Smallmouth Bass",
+    range: "50 to 70 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Smallmouth_bass.jpg",
+    credit: "Smallmouth bass - Wikimedia Commons",
+    source: "https://commons.wikimedia.org/wiki/File:Smallmouth_bass.jpg",
+    text: "Smallmouth bass prefer rock, gravel, points, humps, ledges, and clear water structure. In early spring, around 40 to 50 F, they hold deeper near staging areas. From about 50 to 60 F, they move toward rocky flats and gravel banks. Spawning often happens around 55 to 65 F. In summer, they may hold deeper on humps, ledges, and points but will still move shallow to feed, especially with wind or low light. In fall, they follow baitfish and can become very aggressive.",
+    tips: "Wind is your friend for smallmouth. Fish windblown rock, points, and gravel transitions. Use long casts in clear water. If fish follow but do not commit, downsize or switch to finesse. If you catch one, work the area carefully because smallmouth often group up.",
+    baits: "Tubes, drop shots, Ned rigs, jerkbaits, crankbaits, small swimbaits, finesse jigs, and grubs."
+  },
+  {
+    name: "Kokanee",
+    range: "45 to 60 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Sammamish_kokanee_(51666400632).jpg",
+    credit: "Sammamish kokanee - Roger Tabor/USFWS, Wikimedia Commons, CC BY 2.0",
+    source: "https://commons.wikimedia.org/wiki/File:Sammamish_kokanee_(51666400632).jpg",
+    text: "Kokanee are landlocked sockeye salmon that usually suspend over open water rather than holding to structure. They often prefer water around 48 to 54 F, but their actual depth changes by lake, season, light, and plankton movement. In spring, they may be high in the water column. As lakes warm and stratify, they usually move deeper and may hold anywhere from 20 to 80 feet or more. Late in the season, mature fish begin changing color and behavior as they prepare to spawn.",
+    tips: "Depth control matters more than almost anything. Use electronics to find schools, then keep your gear slightly above the fish because kokanee often feed upward. Troll around 1.0 to 1.5 mph and make gradual turns, because the inside and outside rods change speed and often trigger strikes. If you get short bites, change scent, leader length, hook size, or dodger action before leaving the school.",
+    baits: "Dodgers, hoochies, wedding rings, small spinners, corn, scent, small spoons, and light leaders."
+  },
+  {
+    name: "Rainbow Trout",
+    range: "45 to 65 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Rainbow_Trout.jpg",
+    credit: "Rainbow trout - Wikimedia Commons",
+    source: "https://commons.wikimedia.org/wiki/File:Rainbow_Trout.jpg",
+    text: "Rainbow trout are mobile feeders that move with temperature, oxygen, and food. In cooler water, especially spring and fall, they may cruise near the surface or along shorelines. As surface temps climb into the upper 60s and beyond, they often slide deeper or move near cooler inflows. Wind can push food toward banks and make trout more willing to feed shallow.",
+    tips: "Cover water until you find active fish. In spring, start shallow with long lines or light trolling weights. In summer, work deeper or fish early and late. Look for inlets, points, windblown banks, shade lines, and areas where insects or baitfish are concentrated.",
+    baits: "Spoons, spinners, wedding rings, trolling flies, worms, PowerBait, small plugs, and flies."
+  },
+  {
+    name: "Lake Trout",
+    range: "38 to 52 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Lake_trout.jpg",
+    credit: "Lake trout - Wikimedia Commons",
+    source: "https://commons.wikimedia.org/wiki/File:Lake_trout.jpg",
+    text: "Lake trout are cold-water predators that often live deep, especially once surface water warms. In spring, they may be shallower while the whole lake is still cold. Later, they usually move to deep points, shelves, humps, steep breaks, and areas with bait. They can be very depth-specific, and a difference of only a few feet can matter.",
+    tips: "Use electronics heavily. Do not just troll empty water. Find bait, marks, bottom transitions, or suspended fish. For jigging, drop directly on fish and vary cadence from subtle shakes to aggressive rips. For trolling, keep gear close to the marked depth and stay near structure.",
+    baits: "Heavy jigs, tube jigs, spoons, plugs, deep trolling rigs, swimbaits, and baitfish imitations."
+  },
+  {
+    name: "Chinook Salmon",
+    range: "42 to 55 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Chinook_salmon.jpg",
+    credit: "Chinook salmon - Wikimedia Commons",
+    source: "https://commons.wikimedia.org/wiki/File:Chinook_salmon.jpg",
+    text: "Chinook salmon are bait and temperature driven. In lakes and reservoirs, they often hold deeper than trout and kokanee and may travel along breaks, channels, and bait corridors. Low light is important, especially early morning. As sun and boat pressure increase, Chinook often drop deeper or become less aggressive.",
+    tips: "Fish early and stay disciplined with depth. Mark bait first, then work slightly above or through the feeding zone. Speed can vary, but consistency matters. If fish are present but not biting, change dodger/flasher size, leader length, lure color, scent, or trolling direction.",
+    baits: "Flashers, dodgers, hoochies, spoons, plugs, scent, and cut bait where legal."
+  },
+  {
+    name: "Northern Pike",
+    range: "50 to 70 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Northern_pike.jpg",
+    credit: "Northern pike - Wikimedia Commons",
+    source: "https://commons.wikimedia.org/wiki/File:Northern_pike.jpg",
+    text: "Northern pike are ambush predators that use weeds, shallow bays, backwaters, channels, and edges. After ice-out and in early spring, they move very shallow to spawn. As water warms, they spread to weed beds and ambush points. In summer, bigger fish may hold near deeper weed edges or cooler water while smaller fish stay shallow.",
+    tips: "Cover water until you find active fish. Focus on weed edges, pockets, points, and baitfish. Use pauses in the retrieve because pike often follow before striking. Always use a wire or heavy fluorocarbon leader to prevent bite-offs.",
+    baits: "Spinnerbaits, spoons, jerkbaits, swimbaits, chatterbaits, glide baits, and large soft plastics."
+  },
+  {
+    name: "Walleye",
+    range: "45 to 70 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Walleye.jpg",
+    credit: "Walleye - Wikimedia Commons",
+    source: "https://commons.wikimedia.org/wiki/File:Walleye.jpg",
+    text: "Walleye are low-light predators that often hold near bottom and relate to structure, current, and bait. In spring, they spawn around rocky or current-influenced areas and then recover nearby. In summer, they may hold on flats, points, humps, drop-offs, or deeper edges during the day and move shallower in low light. Wind can improve the bite by reducing light penetration and moving bait.",
+    tips: "Fish early, late, cloudy days, wind, or night when possible. Stay close to bottom unless electronics show suspended fish. Move slowly when jigging. When trolling, use depth control to keep crankbaits or crawler rigs near the strike zone.",
+    baits: "Jigs, plastics, crawlers, crankbaits, bottom bouncers, blade baits, and trolling plugs."
+  },
+  {
+    name: "Yellow Perch",
+    range: "50 to 70 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Yellow_perch.jpg",
+    credit: "Yellow perch - Wikimedia Commons",
+    source: "https://commons.wikimedia.org/wiki/File:Yellow_perch.jpg",
+    text: "Yellow perch are schooling fish that often relate to weeds, flats, soft bottom transitions, and deeper basins. In spring, they may move shallow to spawn. In summer, schools can spread along weed edges or suspend near food. In fall, they often group tighter and feed heavily before winter.",
+    tips: "Once you catch one, slow down and work the area because perch schools can be tight. Use small hooks and light line. If you get small fish constantly, move slightly deeper or to the edge of the school for better fish.",
+    baits: "Small jigs, worms, maggots, tiny spoons, perch meat where legal, and small plastics."
+  },
+  {
+    name: "Crappie",
+    range: "55 to 70 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Crappie.jpg",
+    credit: "Crappie - Wikimedia Commons",
+    source: "https://commons.wikimedia.org/wiki/File:Crappie.jpg",
+    text: "Crappie relate to brush, docks, weeds, timber, and suspended cover. In spring, they move shallow to spawn when water warms into the upper 50s and 60s. After spawning, they often suspend near deeper cover. Summer crappie may be in shade, under docks, near brush piles, or suspended over deeper water.",
+    tips: "Fish slow and stay vertical when possible. Crappie often want a bait held above them, not below them. If the bite is light, use a slip bobber or tiny jig and reduce movement. Electronics help a lot for suspended schools.",
+    baits: "Small jigs, tubes, minnows, slip bobbers, tiny swimbaits, hair jigs, and small plastics."
+  },
+  {
+    name: "Bluegill",
+    range: "65 to 80 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Bluegill.jpg",
+    credit: "Bluegill - Wikimedia Commons",
+    source: "https://commons.wikimedia.org/wiki/File:Bluegill.jpg",
+    text: "Bluegill are warm-water panfish that use weeds, docks, shallow cover, and protected banks. They often spawn in colonies when water warms into the upper 60s and 70s. Small bluegill may be very shallow, while larger fish often hold slightly deeper or on the outside edge of cover.",
+    tips: "Use small hooks because bluegill have small mouths. For better fish, move away from the obvious shallow schools and fish slightly deeper weed edges or shade. Light line makes a big difference.",
+    baits: "Worms, tiny jigs, small flies, micro plastics, wax worms, and bobber rigs."
+  },
+  {
+    name: "Channel Catfish",
+    range: "65 to 85 F",
+    image: "https://commons.wikimedia.org/wiki/Special:FilePath/Channel_catfish.jpg",
+    credit: "Channel catfish - Wikimedia Commons",
+    source: "https://commons.wikimedia.org/wiki/File:Channel_catfish.jpg",
+    text: "Channel catfish are scent-driven predators and scavengers that feed best in warmer water. They often become more active as water climbs through the 60s and 70s. Evening, night, stained water, current, and scent movement can all improve the bite. They use channels, holes, flats, current seams, and feeding lanes.",
+    tips: "Fish where scent can travel naturally, such as current seams, points, channels, and wind-blown areas. Let the fish load the rod before setting, especially with circle hooks. If you get taps but no hookup, wait longer or downsize bait.",
+    baits: "Cut bait, worms, stink bait, shrimp, chicken liver, punch bait, prepared bait, and legal baitfish."
+  }
+];
 
   appendHtml(
     page,

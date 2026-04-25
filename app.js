@@ -1,5 +1,5 @@
 // ============================
-// app.js (PART 1 OF 5) BEGIN
+// app.js (PART 1 OF 4) BEGIN
 // FishyNW.com - Fishing Tools (Web)
 // Streamlined build
 // ASCII ONLY. No Unicode. No smart quotes. No special dashes.
@@ -18,10 +18,11 @@
   - Removed water type logic.
   - Removed craft logic.
   - Kept the same look and layout style.
-  - Home status is now based on wind, gusts, temperature, and cold risk only.
+  - Restored original-style wind chart.
+  - Restored dropdown species tips.
 */
 
-const APP_VERSION = "Beta 1.1";
+const APP_VERSION = "Beta 1.0";
 
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
@@ -192,8 +193,6 @@ const state = {
   matches: [],
   selectedIndex: 0,
   speedWatchId: null,
-
-  // Home uses this date (YYYY-MM-DD). Default set at boot to today, but USER can change it.
   dateIso: ""
 };
 
@@ -203,7 +202,7 @@ const state = {
 let app = null;
 
 // ----------------------------
-// Styles (mobile-first)
+// Styles
 // ----------------------------
 (function injectStyles() {
   const css = `
@@ -497,7 +496,7 @@ function isoTodayLocal() {
 }
 
 function isIsoDate(s) {
-  return typeof s === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(s);
+  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
 function filterHourlyToDate(times, values, dateIso) {
@@ -519,10 +518,10 @@ function filterHourlyToDate(times, values, dateIso) {
 }
 
 function normalizePlaceQuery(s) {
-  const x0 = String(s || "").trim().replace(/\\s+/g, " ");
+  const x0 = String(s || "").trim().replace(/\s+/g, " ");
   if (!x0) return "";
 
-  const m = x0.match(/^(.+?),\\s*([a-zA-Z]{2})$/);
+  const m = x0.match(/^(.+?),\s*([a-zA-Z]{2})$/);
 
   if (m) {
     const city = String(m[1] || "").trim();
@@ -568,7 +567,7 @@ async function fetchJson(url, timeoutMs) {
     } catch (e) {
       const snippet = String(text || "")
         .slice(0, 160)
-        .replace(/\\s+/g, " ")
+        .replace(/\s+/g, " ")
         .trim();
 
       throw new Error(
@@ -607,10 +606,10 @@ function niceErr(e) {
 }
 
 // ============================
-// app.js (PART 1 OF 5) END
+// app.js (PART 1 OF 4) END
 // ============================
 // ============================
-// app.js (PART 2 OF 5) BEGIN
+// app.js (PART 2 OF 4) BEGIN
 // ============================
 
 // ----------------------------
@@ -665,6 +664,7 @@ async function reverseGeocode(lat, lon) {
   try {
     const data = await fetchJson(url, 12000);
     const results = data && data.results ? data.results : [];
+
     if (!results.length) return null;
 
     const x = results[0];
@@ -674,6 +674,7 @@ async function reverseGeocode(lat, lon) {
 
     const parts = [name, admin1, country].filter(Boolean);
     const label = parts.join(", ");
+
     return label || null;
   } catch (e) {
     return null;
@@ -695,7 +696,6 @@ async function fetchSunTimesMulti(lat, lon) {
     "&timezone=auto";
 
   const data = await fetchJson(url, 12000);
-
   const daily = data && data.daily ? data.daily : null;
 
   return {
@@ -706,13 +706,13 @@ async function fetchSunTimesMulti(lat, lon) {
 }
 
 function sunForDate(sunData, dateIso) {
-  if (!sunData || !sunData.days) return null;
+  if (!sunData || !sunData.days || !sunData.days.length) return null;
 
   const idx = sunData.days.indexOf(dateIso);
   if (idx < 0) return null;
 
-  const sr = sunData.sunrise[idx];
-  const ss = sunData.sunset[idx];
+  const sr = sunData.sunrise && sunData.sunrise[idx] ? sunData.sunrise[idx] : null;
+  const ss = sunData.sunset && sunData.sunset[idx] ? sunData.sunset[idx] : null;
 
   if (!sr || !ss) return null;
 
@@ -741,18 +741,21 @@ async function fetchWeatherWindMulti(lat, lon) {
 
   const data = await fetchJson(url, 12000);
 
+  const daily = data && data.daily ? data.daily : {};
+  const hourly = data && data.hourly ? data.hourly : {};
+
   return {
     daily: {
-      time: data.daily.time || [],
-      tmin: data.daily.temperature_2m_min || [],
-      tmax: data.daily.temperature_2m_max || [],
-      popMax: data.daily.precipitation_probability_max || [],
-      windMax: data.daily.wind_speed_10m_max || [],
-      gustMax: data.daily.wind_gusts_10m_max || []
+      time: daily.time || [],
+      tmin: daily.temperature_2m_min || [],
+      tmax: daily.temperature_2m_max || [],
+      popMax: daily.precipitation_probability_max || [],
+      windMax: daily.wind_speed_10m_max || [],
+      gustMax: daily.wind_gusts_10m_max || []
     },
     hourly: {
-      time: data.hourly.time || [],
-      wind: data.hourly.wind_speed_10m || []
+      time: hourly.time || [],
+      wind: hourly.wind_speed_10m || []
     }
   };
 }
@@ -787,7 +790,11 @@ async function getForecastBundle(lat, lon) {
     forecastCache.sun &&
     now - forecastCache.ts < FORECAST_TTL_MS
   ) {
-    return { wx: forecastCache.wx, sun: forecastCache.sun };
+    return {
+      wx: forecastCache.wx,
+      sun: forecastCache.sun,
+      fromCache: true
+    };
   }
 
   const wx = await fetchWeatherWindMulti(lat, lon);
@@ -798,7 +805,11 @@ async function getForecastBundle(lat, lon) {
   forecastCache.wx = wx;
   forecastCache.sun = sun;
 
-  return { wx: wx, sun: sun };
+  return {
+    wx: wx,
+    sun: sun,
+    fromCache: false
+  };
 }
 
 // ----------------------------
@@ -806,6 +817,7 @@ async function getForecastBundle(lat, lon) {
 // ----------------------------
 function drawWindLineChart(canvas, points) {
   if (!canvas || !canvas.getContext) return;
+
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
@@ -840,6 +852,7 @@ function drawWindLineChart(canvas, points) {
 
   for (let i = 0; i < points.length; i++) {
     const v = Number(points[i].mph);
+
     if (!Number.isFinite(v)) continue;
     if (v < minV) minV = v;
     if (v > maxV) maxV = v;
@@ -867,6 +880,7 @@ function drawWindLineChart(canvas, points) {
 
   for (let g = 0; g <= 2; g++) {
     const yy = padT + (g / 2) * h;
+
     ctx.beginPath();
     ctx.moveTo(padL, yy);
     ctx.lineTo(padL + w, yy);
@@ -887,6 +901,7 @@ function drawWindLineChart(canvas, points) {
 
   ctx.strokeStyle = "rgba(7,27,31,0.75)";
   ctx.lineWidth = 2;
+
   ctx.beginPath();
   ctx.moveTo(xFor(0), yFor(points[0].mph));
 
@@ -920,6 +935,7 @@ function drawWindLineChart(canvas, points) {
   const iEnd = points.length - 1;
 
   ctx.fillStyle = "rgba(0,0,0,0.70)";
+
   ctx.textAlign = "left";
   ctx.fillText(hourLabel(points[iStart].dt), padL, padT + h + 18);
 
@@ -931,13 +947,6 @@ function drawWindLineChart(canvas, points) {
 
   ctx.textAlign = "left";
 }
-
-// ============================
-// app.js (PART 2 OF 5) END
-// ============================
-// ============================
-// app.js (PART 3 OF 5) BEGIN
-// ============================
 
 // ----------------------------
 // UI: Header + Nav
@@ -974,7 +983,10 @@ function renderHeaderAndNav() {
   const nav = document.getElementById("nav");
 
   const items = [];
-  if (state.tool !== "Home") items.push(["Home", "Home"]);
+
+  if (state.tool !== "Home") {
+    items.push(["Home", "Home"]);
+  }
 
   items.push(["Depth", "Trolling depth calculator"]);
   items.push(["Tips", "Species tips"]);
@@ -1067,14 +1079,20 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
         clearResolvedLocation();
         matchesEl.innerHTML = "";
         usingEl.textContent = "";
-        if (typeof onResolved === "function") onResolved("auto_cleared_by_typing");
+
+        if (typeof onResolved === "function") {
+          onResolved("auto_cleared_by_typing");
+        }
       }
 
       if (!val) {
         clearResolvedLocation();
         matchesEl.innerHTML = "";
         usingEl.textContent = "";
-        if (typeof onResolved === "function") onResolved("auto_cleared_empty");
+
+        if (typeof onResolved === "function") {
+          onResolved("auto_cleared_empty");
+        }
       }
     }
   });
@@ -1107,7 +1125,9 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
           lon.toFixed(4) +
           ")";
 
-        if (typeof onResolved === "function") onResolved("gps");
+        if (typeof onResolved === "function") {
+          onResolved("gps");
+        }
 
         reverseGeocode(lat, lon).then(function (label) {
           if (label) {
@@ -1119,7 +1139,9 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
 
           renderUsing();
 
-          if (typeof onResolved === "function") onResolved("gps_reverse");
+          if (typeof onResolved === "function") {
+            onResolved("gps_reverse");
+          }
         });
       },
       function (err) {
@@ -1193,7 +1215,9 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
         matchesEl.innerHTML = "";
         renderUsing();
 
-        if (typeof onResolved === "function") onResolved("search_pick");
+        if (typeof onResolved === "function") {
+          onResolved("search_pick");
+        }
       });
 
     usingEl.textContent = "";
@@ -1205,6 +1229,13 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     }, 450);
   }
 }
+
+// ============================
+// app.js (PART 2 OF 4) END
+// ============================
+// ============================
+// app.js (PART 3 OF 4) BEGIN
+// ============================
 
 // ----------------------------
 // Home logic helpers
@@ -1420,13 +1451,6 @@ function computeExposureTips(inputs) {
   return tips;
 }
 
-// ============================
-// app.js (PART 3 OF 5) END
-// ============================
-// ============================
-// app.js (PART 4 OF 5) BEGIN
-// ============================
-
 // ----------------------------
 // Home
 // ----------------------------
@@ -1457,7 +1481,9 @@ function renderHome() {
   dateInput.addEventListener("change", function () {
     const v = String(dateInput.value || "").trim();
 
-    if (isIsoDate(v)) state.dateIso = v;
+    if (isIsoDate(v)) {
+      state.dateIso = v;
+    }
 
     renderHomeDynamic("date_change");
   });
@@ -1471,7 +1497,7 @@ function renderHome() {
     { autoGps: true }
   );
 
-  appendHtml(page, `<div id="home_dynamic"></div>`);
+  appendHtml(page, '<div id="home_dynamic"></div>');
 
   renderHomeDynamic("init");
 
@@ -1780,6 +1806,13 @@ function renderHome() {
   }
 }
 
+// ============================
+// app.js (PART 3 OF 4) END
+// ============================
+// ============================
+// app.js (PART 4 OF 4) BEGIN
+// ============================
+
 // ----------------------------
 // Depth Calculator
 // ----------------------------
@@ -1927,13 +1960,6 @@ function renderDepthCalculator() {
   });
 }
 
-// ============================
-// app.js (PART 4 OF 5) END
-// ============================
-// ============================
-// app.js (PART 5 OF 5) BEGIN
-// ============================
-
 // ----------------------------
 // Species Tips
 // ----------------------------
@@ -2067,39 +2093,6 @@ function renderSpeciesTips() {
   select.addEventListener("change", renderSelectedSpecies);
   renderSelectedSpecies();
 }
-  ];
-
-  appendHtml(
-    page,
-    `
-    <div class="card">
-      <h2>Species Tips</h2>
-      <div class="small muted">General Northwest fishing notes. Use local regulations and current conditions.</div>
-    </div>
-  `
-  );
-
-  for (let i = 0; i < tips.length; i++) {
-    const item = tips[i];
-
-    const bullets = item.bullets
-      .map(function (b) {
-        return "<li>" + escHtml(b) + "</li>";
-      })
-      .join("");
-
-    appendHtml(
-      page,
-      `
-      <div class="card">
-        <h3>${escHtml(item.name)}</h3>
-        <div class="small muted"><strong>Typical active range:</strong> ${escHtml(item.range)}</div>
-        <ul class="list">${bullets}</ul>
-      </div>
-    `
-    );
-  }
-}
 
 // ----------------------------
 // Speedometer
@@ -2227,7 +2220,7 @@ function boot() {
   app = document.getElementById("app");
 
   if (!app) {
-    throw new Error("Missing <main id=\"app\"></main>");
+    throw new Error('Missing <main id="app"></main>');
   }
 
   const last = loadLastLocation();
@@ -2253,5 +2246,5 @@ if (document.readyState === "loading") {
 }
 
 // ============================
-// app.js (PART 5 OF 5) END
+// app.js (PART 4 OF 4) END
 // ============================

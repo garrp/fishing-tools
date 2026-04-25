@@ -805,51 +805,131 @@ async function getForecastBundle(lat, lon) {
 // Wind chart
 // ----------------------------
 function drawWindLineChart(canvas, points) {
-  if (!canvas) return;
-
+  if (!canvas || !canvas.getContext) return;
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
+  const cssW = canvas.clientWidth || 600;
+  const cssH = canvas.clientHeight || 180;
+  const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
 
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  ctx.clearRect(0, 0, w, h);
+  ctx.clearRect(0, 0, cssW, cssH);
 
-  if (!points || points.length < 2) {
-    ctx.fillText("No data", 10, 20);
+  const padL = 36;
+  const padR = 10;
+  const padT = 10;
+  const padB = 24;
+
+  const w = cssW - padL - padR;
+  const h = cssH - padT - padB;
+
+  if (!points || points.length < 2 || w <= 10 || h <= 10) {
+    ctx.fillStyle = "rgba(0,0,0,0.75)";
+    ctx.font =
+      "13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+    ctx.fillText("Not enough data for chart.", 12, 22);
     return;
   }
 
-  let min = Infinity;
-  let max = -Infinity;
+  let minV = Infinity;
+  let maxV = -Infinity;
 
   for (let i = 0; i < points.length; i++) {
-    const v = points[i].mph;
-    if (v < min) min = v;
-    if (v > max) max = v;
+    const v = Number(points[i].mph);
+    if (!Number.isFinite(v)) continue;
+    if (v < minV) minV = v;
+    if (v > maxV) maxV = v;
   }
 
-  const range = Math.max(1, max - min);
+  if (!Number.isFinite(minV) || !Number.isFinite(maxV)) return;
 
-  function x(i) {
-    return (i / (points.length - 1)) * w;
+  const range = Math.max(1, maxV - minV);
+  const extra = range * 0.15;
+
+  minV = Math.max(0, minV - extra);
+  maxV = maxV + extra;
+
+  function xFor(i) {
+    return padL + (i / (points.length - 1)) * w;
   }
 
-  function y(v) {
-    return h - ((v - min) / range) * h;
+  function yFor(v) {
+    const t = (v - minV) / (maxV - minV);
+    return padT + (1 - t) * h;
   }
 
+  ctx.strokeStyle = "rgba(0,0,0,0.10)";
+  ctx.lineWidth = 1;
+
+  for (let g = 0; g <= 2; g++) {
+    const yy = padT + (g / 2) * h;
+    ctx.beginPath();
+    ctx.moveTo(padL, yy);
+    ctx.lineTo(padL + w, yy);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "rgba(0,0,0,0.70)";
+  ctx.font =
+    "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+
+  const yTop = maxV;
+  const yMid = (minV + maxV) / 2;
+  const yBot = minV;
+
+  ctx.fillText(String(Math.round(yTop)) + " mph", 6, padT + 12);
+  ctx.fillText(String(Math.round(yMid)) + " mph", 6, padT + h / 2 + 4);
+  ctx.fillText(String(Math.round(yBot)) + " mph", 6, padT + h + 4);
+
+  ctx.strokeStyle = "rgba(7,27,31,0.75)";
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(x(0), y(points[0].mph));
+  ctx.moveTo(xFor(0), yFor(points[0].mph));
 
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(x(i), y(points[i].mph));
+  for (let i2 = 1; i2 < points.length; i2++) {
+    ctx.lineTo(xFor(i2), yFor(points[i2].mph));
   }
 
   ctx.stroke();
+
+  ctx.fillStyle = "rgba(7,27,31,0.70)";
+
+  for (let d = 0; d < points.length; d++) {
+    const xx = xFor(d);
+    const yy2 = yFor(points[d].mph);
+
+    ctx.beginPath();
+    ctx.arc(xx, yy2, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function hourLabel(dt) {
+    try {
+      return dt.toLocaleTimeString([], { hour: "numeric" });
+    } catch (e) {
+      return "";
+    }
+  }
+
+  const iStart = 0;
+  const iMid2 = Math.floor((points.length - 1) / 2);
+  const iEnd = points.length - 1;
+
+  ctx.fillStyle = "rgba(0,0,0,0.70)";
+  ctx.textAlign = "left";
+  ctx.fillText(hourLabel(points[iStart].dt), padL, padT + h + 18);
+
+  ctx.textAlign = "center";
+  ctx.fillText(hourLabel(points[iMid2].dt), xFor(iMid2), padT + h + 18);
+
+  ctx.textAlign = "right";
+  ctx.fillText(hourLabel(points[iEnd].dt), padL + w, padT + h + 18);
+
+  ctx.textAlign = "left";
 }
 
 // ============================

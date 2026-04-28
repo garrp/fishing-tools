@@ -826,7 +826,8 @@ function cacheKey(lat, lon) {
 async function getForecastBundle(lat, lon) {
   const k = cacheKey(lat, lon);
   const now = Date.now();
-
+  const alerts = await fetchNOAAAlerts(lat, lon);
+  
   if (
     forecastCache.key === k &&
     forecastCache.wx &&
@@ -838,6 +839,12 @@ async function getForecastBundle(lat, lon) {
       sun: forecastCache.sun,
       fromCache: true
     };
+    return {
+  wx: wx,
+  sun: sun,
+  alerts: alerts, // <-- ADD
+  fromCache: false
+};
   }
 
   const wx = await fetchWeatherWindMulti(lat, lon);

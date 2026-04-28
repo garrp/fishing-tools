@@ -396,6 +396,30 @@ let app = null;
 
   .consentDecline:hover { background: #ee8f8f !important; }
 
+  .alertBar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 10px 12px;
+    background: #fff8e1;
+    border-top: 1px solid rgba(0,0,0,0.2);
+    z-index: 9998;
+    font-size: 13px;
+    line-height: 16px;
+    text-align: center;
+  }
+
+  .alertBar a {
+    font-weight: 900;
+    color: #0b2e13;
+    text-decoration: underline;
+  }
+
+  .alertBarSevere {
+    background: #f4a3a3;
+  }
+
   .grid2 {
     display:grid;
     grid-template-columns: 1fr 1fr;
@@ -469,6 +493,7 @@ function setResolvedLocation(lat, lon, label) {
   forecastCache.ts = 0;
   forecastCache.wx = null;
   forecastCache.sun = null;
+  forecastCache.alerts = null;
 }
 
 function clearResolvedLocation() {
@@ -484,6 +509,7 @@ function clearResolvedLocation() {
   forecastCache.ts = 0;
   forecastCache.wx = null;
   forecastCache.sun = null;
+  forecastCache.alerts = null;
 }
 
 function isoTodayLocal() {
@@ -611,6 +637,84 @@ function niceErr(e) {
 // ============================
 // app.js (PART 2 OF 4) BEGIN
 // ============================
+
+// ----------------------------
+// NOAA Alerts (NWS)
+// ----------------------------
+async function fetchNOAAAlerts(lat, lon) {
+  try {
+    const pointUrl =
+      "https://api.weather.gov/points/" +
+      encodeURIComponent(lat) +
+      "," +
+      encodeURIComponent(lon);
+
+    const pointData = await fetchJson(pointUrl, 12000);
+
+    const zoneUrl =
+      pointData &&
+      pointData.properties &&
+      pointData.properties.forecastZone
+        ? String(pointData.properties.forecastZone)
+        : "";
+
+    if (!zoneUrl) return [];
+
+    const zoneId = zoneUrl.split("/").pop();
+    if (!zoneId) return [];
+
+    const alertsUrl =
+      "https://api.weather.gov/alerts/active?zone=" +
+      encodeURIComponent(zoneId);
+
+    const alertsData = await fetchJson(alertsUrl, 12000);
+    const features = alertsData && alertsData.features ? alertsData.features : [];
+
+    return features.map(function (f) {
+      const p = f.properties || {};
+
+      return {
+        event: p.event || "Weather Alert",
+        headline: p.headline || "",
+        severity: p.severity || "",
+        url: f.id || p["@id"] || p.id || ""
+      };
+    });
+  } catch (e) {
+    return [];
+  }
+}
+
+function renderWeatherAlertBar(alerts) {
+  const existing = document.getElementById("alert_bar");
+  if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+
+  const bar = document.createElement("div");
+  bar.id = "alert_bar";
+  bar.className = "alertBar";
+
+  if (!alerts || !alerts.length) {
+    bar.innerHTML = "<strong>No weather alerts</strong>";
+  } else {
+    const a = alerts[0];
+    const severe = a.severity === "Severe" || a.severity === "Extreme";
+
+    if (severe) {
+      bar.className = "alertBar alertBarSevere";
+    }
+
+    bar.innerHTML =
+      "<strong>" +
+      escHtml(a.event || "Weather Alert") +
+      ":</strong> " +
+      escHtml(a.headline || "Active weather alert in this area.") +
+      (a.url
+        ? ' <a href="' + escHtml(a.url) + '" target="_blank" rel="noopener">Details</a>'
+        : "");
+  }
+
+  document.body.appendChild(bar);
+}
 
 // ----------------------------
 // API: Geocoding
@@ -767,7 +871,8 @@ const forecastCache = {
   key: "",
   ts: 0,
   wx: null,
-  sun: null
+  sun: null,
+  alerts: null
 };
 
 const FORECAST_TTL_MS = 10 * 60 * 1000;
@@ -788,26 +893,31 @@ async function getForecastBundle(lat, lon) {
     forecastCache.key === k &&
     forecastCache.wx &&
     forecastCache.sun &&
+    forecastCache.alerts &&
     now - forecastCache.ts < FORECAST_TTL_MS
   ) {
     return {
       wx: forecastCache.wx,
       sun: forecastCache.sun,
+      alerts: forecastCache.alerts,
       fromCache: true
     };
   }
 
   const wx = await fetchWeatherWindMulti(lat, lon);
   const sun = await fetchSunTimesMulti(lat, lon);
+  const alerts = await fetchNOAAAlerts(lat, lon);
 
   forecastCache.key = k;
   forecastCache.ts = now;
   forecastCache.wx = wx;
   forecastCache.sun = sun;
+  forecastCache.alerts = alerts;
 
   return {
     wx: wx,
     sun: sun,
+    alerts: alerts,
     fromCache: false
   };
 }
@@ -1323,6 +1433,15 @@ function pickFunnyReason(label, seedStr) {
 }
 
 function computeGoStatus(inputs) {
+  if (inputs && inputs.hasAlerts) {
+    return {
+      label: "NO-GO",
+      score: 90,
+      needlePct: 90,
+      message: "NO-GO: Active weather alerts in this area. Check the alert details before going out."
+    };
+  }
+
   const windMax = safeNum(inputs.windMax, 0);
   const gustMax = safeNum(inputs.gustMax, windMax);
   const tmin = safeNum(inputs.tmin, 40);
@@ -1531,11 +1650,13 @@ function renderHome() {
 
     let wx = null;
     let sun = null;
+    let alerts = [];
 
     try {
       const bundle = await getForecastBundle(state.lat, state.lon);
       wx = bundle.wx;
       sun = bundle.sun;
+      alerts = bundle.alerts || [];
     } catch (e) {
       dyn.innerHTML =
         '<div class="card"><strong>Could not load data.</strong>' +
@@ -1623,7 +1744,8 @@ function renderHome() {
       windMax: windMax,
       gustMax: gustMax,
       tmin: tmin,
-      tmax: tmax
+      tmax: tmax,
+      hasAlerts: alerts.length > 0
     });
 
     const tips = computeExposureTips({
@@ -1790,6 +1912,8 @@ function renderHome() {
       </div>
     `
     );
+
+    renderWeatherAlertBar(alerts);
 
     let resizeTimer = null;
 

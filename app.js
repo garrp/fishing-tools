@@ -1586,7 +1586,7 @@ function renderHome() {
       <div style="margin-top:12px;">
         <div class="fieldLabel">Date</div>
         <input id="home_date" type="date" />
-        <div class="small muted" style="margin-top:8px;">Forecast is typically available for the next 7 days.</div>
+        <div class="small muted" style="margin-top:8px;">Forecast is typically available for the next 7 days.  Weather alerts will effect go/no-go chart.</div>
       </div>
     </div>
   `

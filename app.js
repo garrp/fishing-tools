@@ -613,6 +613,49 @@ function niceErr(e) {
 // ============================
 
 // ----------------------------
+// NOAA Alerts (NWS)
+// ----------------------------
+async function fetchNOAAAlerts(lat, lon) {
+  try {
+    // Get grid endpoint first
+    const pointUrl =
+      "https://api.weather.gov/points/" +
+      encodeURIComponent(lat) +
+      "," +
+      encodeURIComponent(lon);
+
+    const pointData = await fetchJson(pointUrl, 12000);
+
+    const alertsUrl =
+      pointData &&
+      pointData.properties &&
+      pointData.properties.forecastZone
+        ? pointData.properties.forecastZone.replace(
+            "/zones/",
+            "/alerts/active?zone="
+          )
+        : null;
+
+    if (!alertsUrl) return [];
+
+    const alertsData = await fetchJson(alertsUrl, 12000);
+
+    const features = alertsData && alertsData.features ? alertsData.features : [];
+
+    return features.map(function (f) {
+      const p = f.properties || {};
+      return {
+        event: p.event || "Weather Alert",
+        headline: p.headline || "",
+        severity: p.severity || "",
+        url: p.uri || ""
+      };
+    });
+  } catch (e) {
+    return [];
+  }
+}
+// ----------------------------
 // API: Geocoding
 // ----------------------------
 async function geocodeSearch(query, count) {

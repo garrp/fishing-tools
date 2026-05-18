@@ -410,148 +410,14 @@ let app = null;
     text-align: center;
   }
 
-  .alertBar a,
-  .alertDetailsBtn {
+  .alertBar a {
     font-weight: 900;
     color: #0b2e13;
     text-decoration: underline;
   }
 
-  .alertDetailsBtn {
-    width: auto;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    cursor: pointer;
-    font-size: 13px;
-  }
-
-  .alertDetailsBtn:hover {
-    background: transparent;
-  }
-
   .alertBarSevere {
     background: #f4a3a3;
-  }
-
-  .alertModalBackdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.50);
-    z-index: 10000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 14px;
-  }
-
-  .alertModal {
-    width: min(680px, 100%);
-    max-height: min(82vh, 760px);
-    overflow: auto;
-    background: #fff;
-    color: #111;
-    border-radius: 18px;
-    border: 1px solid rgba(0,0,0,0.18);
-    box-shadow: 0 18px 50px rgba(0,0,0,0.32);
-  }
-
-  .alertModalHeader {
-    padding: 16px 16px 12px 16px;
-    border-bottom: 1px solid rgba(0,0,0,0.10);
-    background: #fff8e1;
-  }
-
-  .alertModalHeaderSevere {
-    background: #f4a3a3;
-  }
-
-  .alertModalTitle {
-    font-size: 20px;
-    line-height: 24px;
-    font-weight: 950;
-    margin: 0;
-  }
-
-  .alertModalSub {
-    margin-top: 6px;
-    font-size: 13px;
-    color: rgba(0,0,0,0.70);
-    font-weight: 800;
-  }
-
-  .alertModalBody {
-    padding: 14px 16px 16px 16px;
-  }
-
-  .alertMetaGrid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-bottom: 12px;
-  }
-
-  .alertMetaItem {
-    border: 1px solid rgba(0,0,0,0.12);
-    border-radius: 14px;
-    padding: 10px;
-    background: rgba(0,0,0,0.025);
-  }
-
-  .alertMetaLabel {
-    font-size: 12px;
-    font-weight: 950;
-    color: rgba(0,0,0,0.62);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .alertMetaValue {
-    margin-top: 4px;
-    font-weight: 850;
-    line-height: 19px;
-  }
-
-  .alertTextBlock {
-    margin-top: 12px;
-    padding: 12px;
-    border-radius: 14px;
-    background: rgba(0,0,0,0.035);
-    border: 1px solid rgba(0,0,0,0.10);
-    white-space: pre-wrap;
-    line-height: 1.45;
-  }
-
-  .alertModalActions {
-    display: flex;
-    gap: 10px;
-    margin-top: 14px;
-  }
-
-  .alertModalActions button,
-  .alertModalActions a {
-    flex: 1;
-    display: block;
-    text-align: center;
-    text-decoration: none;
-    padding: 10px 12px;
-    border-radius: 12px;
-    border: 1px solid var(--greenBorder);
-    background: var(--green);
-    color: var(--text);
-    font-weight: 900;
-  }
-
-  .alertCloseBtn {
-    background: #f2f3f4 !important;
-    color: #111 !important;
-    border-color: rgba(0,0,0,0.18) !important;
-  }
-
-  @media (max-width: 520px) {
-    .alertMetaGrid { grid-template-columns: 1fr; }
-    .alertModalActions { flex-direction: column; }
   }
 
   .grid2 {
@@ -811,11 +677,6 @@ async function fetchNOAAAlerts(lat, lon) {
         event: p.event || "Weather Alert",
         headline: p.headline || "",
         severity: p.severity || "",
-        certainty: p.certainty || "",
-        urgency: p.urgency || "",
-        areas: p.areaDesc || "",
-        description: p.description || "",
-        instruction: p.instruction || "",
         effective: p.effective || "",
         onset: p.onset || "",
         expires: p.expires || "",
@@ -872,14 +733,15 @@ function filterAlertsForDate(alerts, dateIso) {
   });
 }
 
-function formatAlertDateTime(value) {
-  const d = parseAlertDateTime(value);
+function formatAlertEnd(alert) {
+  const d =
+    parseAlertDateTime(alert && alert.ends) ||
+    parseAlertDateTime(alert && alert.expires);
 
   if (!d) return "";
 
   try {
     return d.toLocaleString([], {
-      weekday: "short",
       month: "short",
       day: "numeric",
       hour: "numeric",
@@ -887,94 +749,6 @@ function formatAlertDateTime(value) {
     });
   } catch (e) {
     return "";
-  }
-}
-
-function formatAlertStart(alert) {
-  return (
-    formatAlertDateTime(alert && alert.onset) ||
-    formatAlertDateTime(alert && alert.effective)
-  );
-}
-
-function formatAlertEnd(alert) {
-  return (
-    formatAlertDateTime(alert && alert.ends) ||
-    formatAlertDateTime(alert && alert.expires)
-  );
-}
-
-function alertSeverityIsHigh(alert) {
-  const sev = String(alert && alert.severity ? alert.severity : "");
-  return sev === "Severe" || sev === "Extreme";
-}
-
-function removeAlertDetailsModal() {
-  const existing = document.getElementById("alert_details_modal");
-  if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
-}
-
-function renderAlertDetailModal(alert) {
-  removeAlertDetailsModal();
-
-  if (!alert) return;
-
-  const startText = formatAlertStart(alert) || "Not listed";
-  const endText = formatAlertEnd(alert) || "Not listed";
-  const severity = alert.severity || "Not listed";
-  const urgency = alert.urgency || "Not listed";
-  const certainty = alert.certainty || "Not listed";
-  const areas = alert.areas || "Area details not listed.";
-  const headline = alert.headline || "Active weather alert in this area.";
-  const description = alert.description || "No additional description was provided by the weather service.";
-  const instruction = alert.instruction || "Check local conditions and official weather updates before heading out.";
-  const severeClass = alertSeverityIsHigh(alert) ? " alertModalHeaderSevere" : "";
-
-  const modal = document.createElement("div");
-  modal.id = "alert_details_modal";
-  modal.className = "alertModalBackdrop";
-  modal.setAttribute("role", "dialog");
-  modal.setAttribute("aria-modal", "true");
-  modal.setAttribute("aria-label", "Weather alert details");
-
-  modal.innerHTML =
-    '<div class="alertModal">' +
-    '  <div class="alertModalHeader' + severeClass + '">' +
-    '    <h3 class="alertModalTitle">' + escHtml(alert.event || "Weather Alert") + '</h3>' +
-    '    <div class="alertModalSub">' + escHtml(headline) + '</div>' +
-    '  </div>' +
-    '  <div class="alertModalBody">' +
-    '    <div class="alertMetaGrid">' +
-    '      <div class="alertMetaItem"><div class="alertMetaLabel">Severity</div><div class="alertMetaValue">' + escHtml(severity) + '</div></div>' +
-    '      <div class="alertMetaItem"><div class="alertMetaLabel">Urgency</div><div class="alertMetaValue">' + escHtml(urgency) + '</div></div>' +
-    '      <div class="alertMetaItem"><div class="alertMetaLabel">Starts</div><div class="alertMetaValue">' + escHtml(startText) + '</div></div>' +
-    '      <div class="alertMetaItem"><div class="alertMetaLabel">Ends</div><div class="alertMetaValue">' + escHtml(endText) + '</div></div>' +
-    '      <div class="alertMetaItem"><div class="alertMetaLabel">Certainty</div><div class="alertMetaValue">' + escHtml(certainty) + '</div></div>' +
-    '      <div class="alertMetaItem"><div class="alertMetaLabel">Area</div><div class="alertMetaValue">' + escHtml(areas) + '</div></div>' +
-    '    </div>' +
-    '    <div class="sectionTitle">What it says</div>' +
-    '    <div class="alertTextBlock">' + escHtml(description) + '</div>' +
-    '    <div class="sectionTitle">Recommended action</div>' +
-    '    <div class="alertTextBlock">' + escHtml(instruction) + '</div>' +
-    '    <div class="alertModalActions">' +
-    '      <button id="alert_modal_close" class="alertCloseBtn" type="button">Close</button>' +
-    (alert.url ? '      <a href="' + escHtml(alert.url) + '" target="_blank" rel="noopener">Open official alert</a>' : '') +
-    '    </div>' +
-    '  </div>' +
-    '</div>';
-
-  modal.addEventListener("click", function (e) {
-    if (e.target === modal) removeAlertDetailsModal();
-  });
-
-  document.body.appendChild(modal);
-
-  const closeBtn = document.getElementById("alert_modal_close");
-  if (closeBtn) {
-    closeBtn.addEventListener("click", function () {
-      removeAlertDetailsModal();
-    });
-    closeBtn.focus();
   }
 }
 
@@ -990,33 +764,26 @@ function renderWeatherAlertBar(alerts) {
     bar.innerHTML = "<strong>No weather alerts</strong>";
   } else {
     const a = alerts[0];
-    const severe = alertSeverityIsHigh(a);
+    const severe = a.severity === "Severe" || a.severity === "Extreme";
 
     if (severe) {
       bar.className = "alertBar alertBarSevere";
     }
 
     const endText = formatAlertEnd(a);
-    const extraCount = alerts.length > 1 ? " + " + String(alerts.length - 1) + " more" : "";
 
     bar.innerHTML =
       "<strong>" +
       escHtml(a.event || "Weather Alert") +
-      extraCount +
       ":</strong> " +
       escHtml(a.headline || "Active weather alert in this area.") +
       (endText ? " Ends " + escHtml(endText) + "." : "") +
-      ' <button id="alert_details_btn" class="alertDetailsBtn" type="button">Details</button>';
+      (a.url
+        ? ' <a href="' + escHtml(a.url) + '" target="_blank" rel="noopener">Details</a>'
+        : "");
   }
 
   document.body.appendChild(bar);
-
-  const detailsBtn = document.getElementById("alert_details_btn");
-  if (detailsBtn && alerts && alerts.length) {
-    detailsBtn.addEventListener("click", function () {
-      renderAlertDetailModal(alerts[0]);
-    });
-  }
 }
 
 // ----------------------------
@@ -1140,8 +907,9 @@ async function fetchWeatherWindMulti(lat, lon) {
     "&longitude=" +
     encodeURIComponent(lon) +
     "&daily=temperature_2m_min,temperature_2m_max,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max" +
-    "&hourly=wind_speed_10m" +
+    "&hourly=wind_speed_10m,precipitation_probability,precipitation" +
     "&wind_speed_unit=mph" +
+    "&precipitation_unit=inch" +
     "&temperature_unit=fahrenheit" +
     "&forecast_days=7" +
     "&timezone=auto";
@@ -1162,7 +930,9 @@ async function fetchWeatherWindMulti(lat, lon) {
     },
     hourly: {
       time: hourly.time || [],
-      wind: hourly.wind_speed_10m || []
+      wind: hourly.wind_speed_10m || [],
+      rainProb: hourly.precipitation_probability || [],
+      rainAmount: hourly.precipitation || []
     }
   };
 }
@@ -1359,6 +1129,165 @@ function drawWindLineChart(canvas, points) {
   ctx.fillText(hourLabel(points[iEnd].dt), padL + w, padT + h + 18);
 
   ctx.textAlign = "left";
+}
+
+
+function drawRainChanceChart(canvas, points) {
+  if (!canvas || !canvas.getContext) return;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const cssW = canvas.clientWidth || 600;
+  const cssH = canvas.clientHeight || 180;
+  const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const padL = 36;
+  const padR = 10;
+  const padT = 10;
+  const padB = 24;
+
+  const w = cssW - padL - padR;
+  const h = cssH - padT - padB;
+
+  if (!points || points.length < 2 || w <= 10 || h <= 10) {
+    ctx.fillStyle = "rgba(0,0,0,0.75)";
+    ctx.font =
+      "13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+    ctx.fillText("Not enough data for rain chart.", 12, 22);
+    return;
+  }
+
+  function xFor(i) {
+    return padL + (i / (points.length - 1)) * w;
+  }
+
+  function yFor(v) {
+    const pct = Math.max(0, Math.min(100, Number(v) || 0));
+    return padT + (1 - pct / 100) * h;
+  }
+
+  ctx.strokeStyle = "rgba(0,0,0,0.10)";
+  ctx.lineWidth = 1;
+
+  for (let g = 0; g <= 4; g++) {
+    const yy = padT + (g / 4) * h;
+
+    ctx.beginPath();
+    ctx.moveTo(padL, yy);
+    ctx.lineTo(padL + w, yy);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "rgba(0,0,0,0.70)";
+  ctx.font =
+    "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+
+  ctx.fillText("100%", 6, padT + 12);
+  ctx.fillText("50%", 10, padT + h / 2 + 4);
+  ctx.fillText("0%", 16, padT + h + 4);
+
+  for (let b = 0; b < points.length; b++) {
+    const x = xFor(b);
+    const prob = Math.max(0, Math.min(100, Number(points[b].prob) || 0));
+    const y = yFor(prob);
+    const barW = Math.max(2, w / Math.max(1, points.length) * 0.55);
+
+    ctx.fillStyle = prob >= 50 ? "rgba(7,27,31,0.22)" : "rgba(7,27,31,0.10)";
+    ctx.fillRect(x - barW / 2, y, barW, padT + h - y);
+  }
+
+  ctx.strokeStyle = "rgba(7,27,31,0.75)";
+  ctx.lineWidth = 2;
+
+  ctx.beginPath();
+  ctx.moveTo(xFor(0), yFor(points[0].prob));
+
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(xFor(i), yFor(points[i].prob));
+  }
+
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(7,27,31,0.70)";
+
+  for (let d = 0; d < points.length; d++) {
+    const xx = xFor(d);
+    const yy = yFor(points[d].prob);
+
+    ctx.beginPath();
+    ctx.arc(xx, yy, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function hourLabel(dt) {
+    try {
+      return dt.toLocaleTimeString([], { hour: "numeric" });
+    } catch (e) {
+      return "";
+    }
+  }
+
+  const iStart = 0;
+  const iMid = Math.floor((points.length - 1) / 2);
+  const iEnd = points.length - 1;
+
+  ctx.fillStyle = "rgba(0,0,0,0.70)";
+
+  ctx.textAlign = "left";
+  ctx.fillText(hourLabel(points[iStart].dt), padL, padT + h + 18);
+
+  ctx.textAlign = "center";
+  ctx.fillText(hourLabel(points[iMid].dt), xFor(iMid), padT + h + 18);
+
+  ctx.textAlign = "right";
+  ctx.fillText(hourLabel(points[iEnd].dt), padL + w, padT + h + 18);
+
+  ctx.textAlign = "left";
+}
+
+function summarizeRainWindow(points) {
+  if (!points || !points.length) return "No hourly rain timing data for this date.";
+
+  const wet = points.filter(function (p) {
+    return safeNum(p.prob, 0) >= 30 || safeNum(p.amount, 0) > 0;
+  });
+
+  if (!wet.length) return "Rain is not expected during the selected date.";
+
+  const likely = points.filter(function (p) {
+    return safeNum(p.prob, 0) >= 50 || safeNum(p.amount, 0) > 0;
+  });
+
+  const use = likely.length ? likely : wet;
+  const first = use[0];
+  const last = use[use.length - 1];
+  let peak = use[0];
+
+  for (let i = 1; i < use.length; i++) {
+    if (safeNum(use[i].prob, 0) > safeNum(peak.prob, 0)) peak = use[i];
+  }
+
+  const label = likely.length ? "Rain is most likely" : "A lower rain chance appears";
+
+  return (
+    label +
+    " from about " +
+    formatTime(first.dt) +
+    " to " +
+    formatTime(last.dt) +
+    ", peaking near " +
+    formatTime(peak.dt) +
+    " at " +
+    String(Math.round(safeNum(peak.prob, 0))) +
+    "% chance."
+  );
 }
 
 // ----------------------------
@@ -2086,6 +2015,44 @@ function renderHome() {
       }
     }
 
+    const rainProbRaw = filterHourlyToDate(
+      wx.hourly.time || [],
+      wx.hourly.rainProb || [],
+      useIso
+    );
+
+    const rainAmountRaw = filterHourlyToDate(
+      wx.hourly.time || [],
+      wx.hourly.rainAmount || [],
+      useIso
+    );
+
+    const rainPoints = [];
+
+    for (let r = 0; r < rainProbRaw.length; r++) {
+      if (r % 2 === 0) {
+        const amountMatch = rainAmountRaw[r] ? rainAmountRaw[r].v : 0;
+
+        rainPoints.push({
+          dt: rainProbRaw[r].dt,
+          prob: safeNum(rainProbRaw[r].v, 0),
+          amount: safeNum(amountMatch, 0)
+        });
+      }
+    }
+
+    if (rainPoints.length < 2) {
+      for (let r2 = 0; r2 < rainProbRaw.length; r2++) {
+        const amountMatch2 = rainAmountRaw[r2] ? rainAmountRaw[r2].v : 0;
+
+        rainPoints.push({
+          dt: rainProbRaw[r2].dt,
+          prob: safeNum(rainProbRaw[r2].v, 0),
+          amount: safeNum(amountMatch2, 0)
+        });
+      }
+    }
+
     dyn.innerHTML = "";
 
     const precipDisplay = popIsFinite
@@ -2176,6 +2143,23 @@ function renderHome() {
     const canvas = document.getElementById("wind_canvas");
     drawWindLineChart(canvas, points);
 
+    appendHtml(
+      dyn,
+      `
+      <div class="card">
+        <h3>Hourly rain chance</h3>
+        <div class="small muted">Chance of precipitation by time for the selected date.</div>
+        <div class="chartWrap">
+          <canvas id="rain_canvas" class="windChart"></canvas>
+        </div>
+        <div class="small muted" style="margin-top:8px;">${escHtml(summarizeRainWindow(rainPoints))}</div>
+      </div>
+    `
+    );
+
+    const rainCanvas = document.getElementById("rain_canvas");
+    drawRainChanceChart(rainCanvas, rainPoints);
+
     const bestHtml = windows.length
       ? windows
           .map(function (w) {
@@ -2230,6 +2214,9 @@ function renderHome() {
       resizeTimer = setTimeout(function () {
         const c = document.getElementById("wind_canvas");
         if (c) drawWindLineChart(c, points);
+
+        const rc = document.getElementById("rain_canvas");
+        if (rc) drawRainChanceChart(rc, rainPoints);
       }, 150);
     });
   }

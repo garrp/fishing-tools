@@ -410,14 +410,148 @@ let app = null;
     text-align: center;
   }
 
-  .alertBar a {
+  .alertBar a,
+  .alertDetailsBtn {
     font-weight: 900;
     color: #0b2e13;
     text-decoration: underline;
   }
 
+  .alertDetailsBtn {
+    width: auto;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  .alertDetailsBtn:hover {
+    background: transparent;
+  }
+
   .alertBarSevere {
     background: #f4a3a3;
+  }
+
+  .alertModalBackdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.50);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+  }
+
+  .alertModal {
+    width: min(680px, 100%);
+    max-height: min(82vh, 760px);
+    overflow: auto;
+    background: #fff;
+    color: #111;
+    border-radius: 18px;
+    border: 1px solid rgba(0,0,0,0.18);
+    box-shadow: 0 18px 50px rgba(0,0,0,0.32);
+  }
+
+  .alertModalHeader {
+    padding: 16px 16px 12px 16px;
+    border-bottom: 1px solid rgba(0,0,0,0.10);
+    background: #fff8e1;
+  }
+
+  .alertModalHeaderSevere {
+    background: #f4a3a3;
+  }
+
+  .alertModalTitle {
+    font-size: 20px;
+    line-height: 24px;
+    font-weight: 950;
+    margin: 0;
+  }
+
+  .alertModalSub {
+    margin-top: 6px;
+    font-size: 13px;
+    color: rgba(0,0,0,0.70);
+    font-weight: 800;
+  }
+
+  .alertModalBody {
+    padding: 14px 16px 16px 16px;
+  }
+
+  .alertMetaGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .alertMetaItem {
+    border: 1px solid rgba(0,0,0,0.12);
+    border-radius: 14px;
+    padding: 10px;
+    background: rgba(0,0,0,0.025);
+  }
+
+  .alertMetaLabel {
+    font-size: 12px;
+    font-weight: 950;
+    color: rgba(0,0,0,0.62);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .alertMetaValue {
+    margin-top: 4px;
+    font-weight: 850;
+    line-height: 19px;
+  }
+
+  .alertTextBlock {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(0,0,0,0.035);
+    border: 1px solid rgba(0,0,0,0.10);
+    white-space: pre-wrap;
+    line-height: 1.45;
+  }
+
+  .alertModalActions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .alertModalActions button,
+  .alertModalActions a {
+    flex: 1;
+    display: block;
+    text-align: center;
+    text-decoration: none;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--greenBorder);
+    background: var(--green);
+    color: var(--text);
+    font-weight: 900;
+  }
+
+  .alertCloseBtn {
+    background: #f2f3f4 !important;
+    color: #111 !important;
+    border-color: rgba(0,0,0,0.18) !important;
+  }
+
+  @media (max-width: 520px) {
+    .alertMetaGrid { grid-template-columns: 1fr; }
+    .alertModalActions { flex-direction: column; }
   }
 
   .grid2 {
@@ -677,6 +811,11 @@ async function fetchNOAAAlerts(lat, lon) {
         event: p.event || "Weather Alert",
         headline: p.headline || "",
         severity: p.severity || "",
+        certainty: p.certainty || "",
+        urgency: p.urgency || "",
+        areas: p.areaDesc || "",
+        description: p.description || "",
+        instruction: p.instruction || "",
         effective: p.effective || "",
         onset: p.onset || "",
         expires: p.expires || "",
@@ -733,15 +872,14 @@ function filterAlertsForDate(alerts, dateIso) {
   });
 }
 
-function formatAlertEnd(alert) {
-  const d =
-    parseAlertDateTime(alert && alert.ends) ||
-    parseAlertDateTime(alert && alert.expires);
+function formatAlertDateTime(value) {
+  const d = parseAlertDateTime(value);
 
   if (!d) return "";
 
   try {
     return d.toLocaleString([], {
+      weekday: "short",
       month: "short",
       day: "numeric",
       hour: "numeric",
@@ -749,6 +887,94 @@ function formatAlertEnd(alert) {
     });
   } catch (e) {
     return "";
+  }
+}
+
+function formatAlertStart(alert) {
+  return (
+    formatAlertDateTime(alert && alert.onset) ||
+    formatAlertDateTime(alert && alert.effective)
+  );
+}
+
+function formatAlertEnd(alert) {
+  return (
+    formatAlertDateTime(alert && alert.ends) ||
+    formatAlertDateTime(alert && alert.expires)
+  );
+}
+
+function alertSeverityIsHigh(alert) {
+  const sev = String(alert && alert.severity ? alert.severity : "");
+  return sev === "Severe" || sev === "Extreme";
+}
+
+function removeAlertDetailsModal() {
+  const existing = document.getElementById("alert_details_modal");
+  if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+}
+
+function renderAlertDetailModal(alert) {
+  removeAlertDetailsModal();
+
+  if (!alert) return;
+
+  const startText = formatAlertStart(alert) || "Not listed";
+  const endText = formatAlertEnd(alert) || "Not listed";
+  const severity = alert.severity || "Not listed";
+  const urgency = alert.urgency || "Not listed";
+  const certainty = alert.certainty || "Not listed";
+  const areas = alert.areas || "Area details not listed.";
+  const headline = alert.headline || "Active weather alert in this area.";
+  const description = alert.description || "No additional description was provided by the weather service.";
+  const instruction = alert.instruction || "Check local conditions and official weather updates before heading out.";
+  const severeClass = alertSeverityIsHigh(alert) ? " alertModalHeaderSevere" : "";
+
+  const modal = document.createElement("div");
+  modal.id = "alert_details_modal";
+  modal.className = "alertModalBackdrop";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-label", "Weather alert details");
+
+  modal.innerHTML =
+    '<div class="alertModal">' +
+    '  <div class="alertModalHeader' + severeClass + '">' +
+    '    <h3 class="alertModalTitle">' + escHtml(alert.event || "Weather Alert") + '</h3>' +
+    '    <div class="alertModalSub">' + escHtml(headline) + '</div>' +
+    '  </div>' +
+    '  <div class="alertModalBody">' +
+    '    <div class="alertMetaGrid">' +
+    '      <div class="alertMetaItem"><div class="alertMetaLabel">Severity</div><div class="alertMetaValue">' + escHtml(severity) + '</div></div>' +
+    '      <div class="alertMetaItem"><div class="alertMetaLabel">Urgency</div><div class="alertMetaValue">' + escHtml(urgency) + '</div></div>' +
+    '      <div class="alertMetaItem"><div class="alertMetaLabel">Starts</div><div class="alertMetaValue">' + escHtml(startText) + '</div></div>' +
+    '      <div class="alertMetaItem"><div class="alertMetaLabel">Ends</div><div class="alertMetaValue">' + escHtml(endText) + '</div></div>' +
+    '      <div class="alertMetaItem"><div class="alertMetaLabel">Certainty</div><div class="alertMetaValue">' + escHtml(certainty) + '</div></div>' +
+    '      <div class="alertMetaItem"><div class="alertMetaLabel">Area</div><div class="alertMetaValue">' + escHtml(areas) + '</div></div>' +
+    '    </div>' +
+    '    <div class="sectionTitle">What it says</div>' +
+    '    <div class="alertTextBlock">' + escHtml(description) + '</div>' +
+    '    <div class="sectionTitle">Recommended action</div>' +
+    '    <div class="alertTextBlock">' + escHtml(instruction) + '</div>' +
+    '    <div class="alertModalActions">' +
+    '      <button id="alert_modal_close" class="alertCloseBtn" type="button">Close</button>' +
+    (alert.url ? '      <a href="' + escHtml(alert.url) + '" target="_blank" rel="noopener">Open official alert</a>' : '') +
+    '    </div>' +
+    '  </div>' +
+    '</div>';
+
+  modal.addEventListener("click", function (e) {
+    if (e.target === modal) removeAlertDetailsModal();
+  });
+
+  document.body.appendChild(modal);
+
+  const closeBtn = document.getElementById("alert_modal_close");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", function () {
+      removeAlertDetailsModal();
+    });
+    closeBtn.focus();
   }
 }
 
@@ -764,26 +990,33 @@ function renderWeatherAlertBar(alerts) {
     bar.innerHTML = "<strong>No weather alerts</strong>";
   } else {
     const a = alerts[0];
-    const severe = a.severity === "Severe" || a.severity === "Extreme";
+    const severe = alertSeverityIsHigh(a);
 
     if (severe) {
       bar.className = "alertBar alertBarSevere";
     }
 
     const endText = formatAlertEnd(a);
+    const extraCount = alerts.length > 1 ? " + " + String(alerts.length - 1) + " more" : "";
 
     bar.innerHTML =
       "<strong>" +
       escHtml(a.event || "Weather Alert") +
+      extraCount +
       ":</strong> " +
       escHtml(a.headline || "Active weather alert in this area.") +
       (endText ? " Ends " + escHtml(endText) + "." : "") +
-      (a.url
-        ? ' <a href="' + escHtml(a.url) + '" target="_blank" rel="noopener">Details</a>'
-        : "");
+      ' <button id="alert_details_btn" class="alertDetailsBtn" type="button">Details</button>';
   }
 
   document.body.appendChild(bar);
+
+  const detailsBtn = document.getElementById("alert_details_btn");
+  if (detailsBtn && alerts && alerts.length) {
+    detailsBtn.addEventListener("click", function () {
+      renderAlertDetailModal(alerts[0]);
+    });
+  }
 }
 
 // ----------------------------

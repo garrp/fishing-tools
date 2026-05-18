@@ -677,11 +677,78 @@ async function fetchNOAAAlerts(lat, lon) {
         event: p.event || "Weather Alert",
         headline: p.headline || "",
         severity: p.severity || "",
+        effective: p.effective || "",
+        onset: p.onset || "",
+        expires: p.expires || "",
+        ends: p.ends || "",
         url: f.id || p["@id"] || p.id || ""
       };
     });
   } catch (e) {
     return [];
+  }
+}
+
+function parseAlertDateTime(value) {
+  if (!value) return null;
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+
+  return d;
+}
+
+function selectedDateRange(dateIso) {
+  const safeIso = isIsoDate(dateIso) ? dateIso : isoTodayLocal();
+  const start = new Date(safeIso + "T00:00:00");
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+
+  return { start: start, end: end };
+}
+
+function alertAppliesToDate(alert, dateIso) {
+  if (!alert) return false;
+
+  const range = selectedDateRange(dateIso);
+  const start =
+    parseAlertDateTime(alert.onset) ||
+    parseAlertDateTime(alert.effective) ||
+    new Date();
+  const end =
+    parseAlertDateTime(alert.ends) ||
+    parseAlertDateTime(alert.expires);
+
+  if (!end) {
+    return dateIso === isoTodayLocal();
+  }
+
+  return start < range.end && end > range.start;
+}
+
+function filterAlertsForDate(alerts, dateIso) {
+  if (!alerts || !alerts.length) return [];
+
+  return alerts.filter(function (a) {
+    return alertAppliesToDate(a, dateIso);
+  });
+}
+
+function formatAlertEnd(alert) {
+  const d =
+    parseAlertDateTime(alert && alert.ends) ||
+    parseAlertDateTime(alert && alert.expires);
+
+  if (!d) return "";
+
+  try {
+    return d.toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    });
+  } catch (e) {
+    return "";
   }
 }
 
@@ -703,11 +770,14 @@ function renderWeatherAlertBar(alerts) {
       bar.className = "alertBar alertBarSevere";
     }
 
+    const endText = formatAlertEnd(a);
+
     bar.innerHTML =
       "<strong>" +
       escHtml(a.event || "Weather Alert") +
       ":</strong> " +
       escHtml(a.headline || "Active weather alert in this area.") +
+      (endText ? " Ends " + escHtml(endText) + "." : "") +
       (a.url
         ? ' <a href="' + escHtml(a.url) + '" target="_blank" rel="noopener">Details</a>'
         : "");
@@ -1739,13 +1809,15 @@ function renderHome() {
       "," +
       String(Number(state.lon).toFixed(3));
 
+    const alertsForDate = filterAlertsForDate(alerts, useIso);
+
     const status = computeGoStatus({
       seed: seed,
       windMax: windMax,
       gustMax: gustMax,
       tmin: tmin,
       tmax: tmax,
-      hasAlerts: alerts.length > 0
+      hasAlerts: alertsForDate.length > 0
     });
 
     const tips = computeExposureTips({
@@ -1913,7 +1985,7 @@ function renderHome() {
     `
     );
 
-    renderWeatherAlertBar(alerts);
+    renderWeatherAlertBar(alertsForDate);
 
     let resizeTimer = null;
 

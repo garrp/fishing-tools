@@ -221,7 +221,13 @@ let app = null;
   .logo { max-width: 60%; }
   .logo img { width: 100%; max-width: 260px; height: auto; display:block; }
 
-  .title { text-align:right; font-weight:900; font-size:18px; line-height:20px; }
+  .title {
+    text-align:right;
+    font-weight:900;
+    font-size:18px;
+    line-height:20px;
+    padding-top: 8px;
+  }
   .small { font-size: 13px; opacity:0.92; }
   .muted { color: var(--muted); }
 
@@ -230,7 +236,7 @@ let app = null;
   .navBtn {
     width:100%;
     padding:10px 12px;
-    border-radius:10px;
+    border-radius:999px;
     border:1px solid var(--greenBorder);
     background: var(--green);
     color: var(--text);
@@ -357,7 +363,7 @@ let app = null;
 
   canvas.windChart {
     width: 100%;
-    height: 180px;
+    height: 260px;
     display: block;
     border-radius: 12px;
     background: rgba(255,255,255,0.9);
@@ -431,12 +437,12 @@ let app = null;
     .header { flex-direction: column; align-items:center; justify-content:center; gap:8px; }
     .logo { max-width: 88%; }
     .logo img { max-width: 280px; margin: 0 auto; }
-    .title { text-align:center; font-size: 18px; }
+    .title { text-align:center; font-size: 18px; padding-top: 8px; }
 
     .nav { grid-template-columns: repeat(2, 1fr); gap:10px; }
     .grid2 { grid-template-columns: 1fr; }
 
-    canvas.windChart { height: 160px; }
+    canvas.windChart { height: 240px; }
 
     .consentInner { flex-direction: column; align-items: stretch; }
     .consentBtns { justify-content: stretch; min-width: 0; }
@@ -996,113 +1002,121 @@ async function getForecastBundle(lat, lon) {
 }
 
 // ----------------------------
-// Wind chart
+// Combined conditions chart
 // ----------------------------
-function drawWindLineChart(canvas, points) {
+function fishingScoreAtTime(dt, windows) {
+  if (!dt || !windows || !windows.length) return 0;
+
+  const t = dt.getTime();
+  let best = 0;
+
+  for (let i = 0; i < windows.length; i++) {
+    const w = windows[i];
+    if (!w || !w.start || !w.end) continue;
+
+    const start = w.start.getTime();
+    const end = w.end.getTime();
+    const mid = start + (end - start) / 2;
+    const half = Math.max(1, (end - start) / 2);
+    const fade = 90 * 60 * 1000;
+    const isMinor = String(w.name || "").toLowerCase().indexOf("minor") >= 0;
+    const peak = isMinor ? 58 : 96;
+    let score = 0;
+
+    if (t >= start && t <= end) {
+      const dist = Math.abs(t - mid) / half;
+      score = peak - dist * (isMinor ? 12 : 18);
+    } else if (t < start && start - t <= fade) {
+      score = peak * (1 - (start - t) / fade) * 0.55;
+    } else if (t > end && t - end <= fade) {
+      score = peak * (1 - (t - end) / fade) * 0.55;
+    }
+
+    if (score > best) best = score;
+  }
+
+  return Math.max(0, Math.min(100, best));
+}
+
+function buildCombinedConditionPoints(windPoints, rainPoints, windows) {
+  const out = [];
+  const rainByTime = {};
+
+  for (let r = 0; r < (rainPoints || []).length; r++) {
+    if (rainPoints[r] && rainPoints[r].dt) {
+      rainByTime[rainPoints[r].dt.getTime()] = rainPoints[r];
+    }
+  }
+
+  const basePoints = windPoints && windPoints.length ? windPoints : rainPoints || [];
+
+  for (let i = 0; i < basePoints.length; i++) {
+    const bp = basePoints[i];
+    if (!bp || !bp.dt) continue;
+
+    const rp = rainByTime[bp.dt.getTime()] || null;
+
+    out.push({
+      dt: bp.dt,
+      wind: safeNum(bp.mph, 0),
+      rain: rp ? safeNum(rp.prob, 0) : 0,
+      amount: rp ? safeNum(rp.amount, 0) : 0,
+      fishing: fishingScoreAtTime(bp.dt, windows)
+    });
+  }
+
+  return out;
+}
+
+function drawFishingConditionsChart(canvas, windPoints, rainPoints, windows) {
   if (!canvas || !canvas.getContext) return;
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const points = buildCombinedConditionPoints(windPoints, rainPoints, windows);
   const cssW = canvas.clientWidth || 600;
-  const cssH = canvas.clientHeight || 180;
+  const cssH = canvas.clientHeight || 260;
   const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
 
   canvas.width = Math.floor(cssW * dpr);
   canvas.height = Math.floor(cssH * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
   ctx.clearRect(0, 0, cssW, cssH);
 
-  const padL = 36;
-  const padR = 10;
-  const padT = 10;
-  const padB = 24;
-
+  const padL = 42;
+  const padR = 42;
+  const padT = 16;
+  const padB = 54;
   const w = cssW - padL - padR;
   const h = cssH - padT - padB;
 
   if (!points || points.length < 2 || w <= 10 || h <= 10) {
     ctx.fillStyle = "rgba(0,0,0,0.75)";
-    ctx.font =
-      "13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
-    ctx.fillText("Not enough data for chart.", 12, 22);
+    ctx.font = "13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+    ctx.fillText("Not enough hourly data for this chart.", 12, 24);
     return;
   }
 
-  let minV = Infinity;
-  let maxV = -Infinity;
-
+  let maxWind = 0;
   for (let i = 0; i < points.length; i++) {
-    const v = Number(points[i].mph);
-
-    if (!Number.isFinite(v)) continue;
-    if (v < minV) minV = v;
-    if (v > maxV) maxV = v;
+    maxWind = Math.max(maxWind, safeNum(points[i].wind, 0));
   }
 
-  if (!Number.isFinite(minV) || !Number.isFinite(maxV)) return;
-
-  const range = Math.max(1, maxV - minV);
-  const extra = range * 0.15;
-
-  minV = Math.max(0, minV - extra);
-  maxV = maxV + extra;
+  const windTop = Math.max(10, Math.ceil((maxWind * 1.25) / 5) * 5);
 
   function xFor(i) {
     return padL + (i / (points.length - 1)) * w;
   }
 
-  function yFor(v) {
-    const t = (v - minV) / (maxV - minV);
-    return padT + (1 - t) * h;
+  function yPct(v) {
+    const pct = Math.max(0, Math.min(100, Number(v) || 0));
+    return padT + (1 - pct / 100) * h;
   }
 
-  ctx.strokeStyle = "rgba(0,0,0,0.10)";
-  ctx.lineWidth = 1;
-
-  for (let g = 0; g <= 2; g++) {
-    const yy = padT + (g / 2) * h;
-
-    ctx.beginPath();
-    ctx.moveTo(padL, yy);
-    ctx.lineTo(padL + w, yy);
-    ctx.stroke();
-  }
-
-  ctx.fillStyle = "rgba(0,0,0,0.70)";
-  ctx.font =
-    "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
-
-  const yTop = maxV;
-  const yMid = (minV + maxV) / 2;
-  const yBot = minV;
-
-  ctx.fillText(String(Math.round(yTop)) + " mph", 6, padT + 12);
-  ctx.fillText(String(Math.round(yMid)) + " mph", 6, padT + h / 2 + 4);
-  ctx.fillText(String(Math.round(yBot)) + " mph", 6, padT + h + 4);
-
-  ctx.strokeStyle = "rgba(7,27,31,0.75)";
-  ctx.lineWidth = 2;
-
-  ctx.beginPath();
-  ctx.moveTo(xFor(0), yFor(points[0].mph));
-
-  for (let i2 = 1; i2 < points.length; i2++) {
-    ctx.lineTo(xFor(i2), yFor(points[i2].mph));
-  }
-
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(7,27,31,0.70)";
-
-  for (let d = 0; d < points.length; d++) {
-    const xx = xFor(d);
-    const yy2 = yFor(points[d].mph);
-
-    ctx.beginPath();
-    ctx.arc(xx, yy2, 2.2, 0, Math.PI * 2);
-    ctx.fill();
+  function yWind(v) {
+    const mph = Math.max(0, Math.min(windTop, Number(v) || 0));
+    return padT + (1 - mph / windTop) * h;
   }
 
   function hourLabel(dt) {
@@ -1113,141 +1127,148 @@ function drawWindLineChart(canvas, points) {
     }
   }
 
-  const iStart = 0;
-  const iMid2 = Math.floor((points.length - 1) / 2);
-  const iEnd = points.length - 1;
+  // Chart background.
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fillRect(0, 0, cssW, cssH);
 
-  ctx.fillStyle = "rgba(0,0,0,0.70)";
-
-  ctx.textAlign = "left";
-  ctx.fillText(hourLabel(points[iStart].dt), padL, padT + h + 18);
-
-  ctx.textAlign = "center";
-  ctx.fillText(hourLabel(points[iMid2].dt), xFor(iMid2), padT + h + 18);
-
-  ctx.textAlign = "right";
-  ctx.fillText(hourLabel(points[iEnd].dt), padL + w, padT + h + 18);
-
-  ctx.textAlign = "left";
-}
-
-
-function drawRainChanceChart(canvas, points) {
-  if (!canvas || !canvas.getContext) return;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  const cssW = canvas.clientWidth || 600;
-  const cssH = canvas.clientHeight || 180;
-  const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
-
-  canvas.width = Math.floor(cssW * dpr);
-  canvas.height = Math.floor(cssH * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  ctx.clearRect(0, 0, cssW, cssH);
-
-  const padL = 36;
-  const padR = 10;
-  const padT = 10;
-  const padB = 24;
-
-  const w = cssW - padL - padR;
-  const h = cssH - padT - padB;
-
-  if (!points || points.length < 2 || w <= 10 || h <= 10) {
-    ctx.fillStyle = "rgba(0,0,0,0.75)";
-    ctx.font =
-      "13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
-    ctx.fillText("Not enough data for rain chart.", 12, 22);
-    return;
-  }
-
-  function xFor(i) {
-    return padL + (i / (points.length - 1)) * w;
-  }
-
-  function yFor(v) {
-    const pct = Math.max(0, Math.min(100, Number(v) || 0));
-    return padT + (1 - pct / 100) * h;
-  }
-
+  // Grid lines.
   ctx.strokeStyle = "rgba(0,0,0,0.10)";
   ctx.lineWidth = 1;
-
   for (let g = 0; g <= 4; g++) {
     const yy = padT + (g / 4) * h;
-
     ctx.beginPath();
     ctx.moveTo(padL, yy);
     ctx.lineTo(padL + w, yy);
     ctx.stroke();
   }
 
-  ctx.fillStyle = "rgba(0,0,0,0.70)";
-  ctx.font =
-    "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+  // Fishing window vertical bands.
+  for (let b = 0; b < (windows || []).length; b++) {
+    const ww = windows[b];
+    if (!ww || !ww.start || !ww.end) continue;
 
-  ctx.fillText("100%", 6, padT + 12);
-  ctx.fillText("50%", 10, padT + h / 2 + 4);
-  ctx.fillText("0%", 16, padT + h + 4);
+    let startIdx = -1;
+    let endIdx = -1;
 
-  for (let b = 0; b < points.length; b++) {
-    const x = xFor(b);
-    const prob = Math.max(0, Math.min(100, Number(points[b].prob) || 0));
-    const y = yFor(prob);
-    const barW = Math.max(2, w / Math.max(1, points.length) * 0.55);
+    for (let p = 0; p < points.length; p++) {
+      const tt = points[p].dt.getTime();
+      if (startIdx < 0 && tt >= ww.start.getTime()) startIdx = p;
+      if (tt <= ww.end.getTime()) endIdx = p;
+    }
 
-    ctx.fillStyle = prob >= 50 ? "rgba(7,27,31,0.22)" : "rgba(7,27,31,0.10)";
+    if (startIdx >= 0 && endIdx >= startIdx) {
+      const x1 = xFor(startIdx);
+      const x2 = xFor(endIdx);
+      ctx.fillStyle = "rgba(143,209,158,0.12)";
+      ctx.fillRect(x1, padT, Math.max(3, x2 - x1), h);
+    }
+  }
+
+  // Rain chance bars.
+  const barW = Math.max(3, (w / Math.max(1, points.length)) * 0.56);
+  for (let r = 0; r < points.length; r++) {
+    const rain = Math.max(0, Math.min(100, safeNum(points[r].rain, 0)));
+    const x = xFor(r);
+    const y = yPct(rain);
+    ctx.fillStyle = rain >= 60 ? "rgba(55,116,185,0.42)" : rain >= 30 ? "rgba(55,116,185,0.28)" : "rgba(55,116,185,0.13)";
     ctx.fillRect(x - barW / 2, y, barW, padT + h - y);
   }
 
-  ctx.strokeStyle = "rgba(7,27,31,0.75)";
-  ctx.lineWidth = 2;
-
+  // Fishing ebb and flow area.
   ctx.beginPath();
-  ctx.moveTo(xFor(0), yFor(points[0].prob));
-
-  for (let i = 1; i < points.length; i++) {
-    ctx.lineTo(xFor(i), yFor(points[i].prob));
+  ctx.moveTo(xFor(0), padT + h);
+  for (let f = 0; f < points.length; f++) {
+    ctx.lineTo(xFor(f), yPct(points[f].fishing));
   }
+  ctx.lineTo(xFor(points.length - 1), padT + h);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(94,166,111,0.18)";
+  ctx.fill();
 
+  ctx.strokeStyle = "rgba(57,128,73,0.85)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(xFor(0), yPct(points[0].fishing));
+  for (let f2 = 1; f2 < points.length; f2++) {
+    ctx.lineTo(xFor(f2), yPct(points[f2].fishing));
+  }
   ctx.stroke();
 
-  ctx.fillStyle = "rgba(7,27,31,0.70)";
+  // Wind line.
+  ctx.strokeStyle = "rgba(7,27,31,0.90)";
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(xFor(0), yWind(points[0].wind));
+  for (let i2 = 1; i2 < points.length; i2++) {
+    ctx.lineTo(xFor(i2), yWind(points[i2].wind));
+  }
+  ctx.stroke();
 
+  ctx.fillStyle = "rgba(7,27,31,0.85)";
   for (let d = 0; d < points.length; d++) {
     const xx = xFor(d);
-    const yy = yFor(points[d].prob);
-
+    const yy = yWind(points[d].wind);
     ctx.beginPath();
     ctx.arc(xx, yy, 2.2, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  function hourLabel(dt) {
-    try {
-      return dt.toLocaleTimeString([], { hour: "numeric" });
-    } catch (e) {
-      return "";
-    }
-  }
+  // Axes labels.
+  ctx.font = "11px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+  ctx.fillStyle = "rgba(0,0,0,0.68)";
+  ctx.textAlign = "left";
+  ctx.fillText(String(windTop) + " mph", 4, padT + 10);
+  ctx.fillText(String(Math.round(windTop / 2)) + " mph", 4, padT + h / 2 + 4);
+  ctx.fillText("0 mph", 8, padT + h + 4);
 
+  ctx.textAlign = "right";
+  ctx.fillText("100%", cssW - 4, padT + 10);
+  ctx.fillText("50%", cssW - 4, padT + h / 2 + 4);
+  ctx.fillText("0%", cssW - 4, padT + h + 4);
+
+  // Hour labels.
   const iStart = 0;
   const iMid = Math.floor((points.length - 1) / 2);
   const iEnd = points.length - 1;
-
-  ctx.fillStyle = "rgba(0,0,0,0.70)";
-
+  ctx.fillStyle = "rgba(0,0,0,0.72)";
   ctx.textAlign = "left";
   ctx.fillText(hourLabel(points[iStart].dt), padL, padT + h + 18);
-
   ctx.textAlign = "center";
   ctx.fillText(hourLabel(points[iMid].dt), xFor(iMid), padT + h + 18);
-
   ctx.textAlign = "right";
   ctx.fillText(hourLabel(points[iEnd].dt), padL + w, padT + h + 18);
+
+  // Legend along the bottom of the canvas.
+  const legendY = cssH - 18;
+  let lx = padL;
+
+  ctx.textAlign = "left";
+  ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+
+  ctx.strokeStyle = "rgba(7,27,31,0.90)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(lx, legendY - 4);
+  ctx.lineTo(lx + 20, legendY - 4);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(0,0,0,0.78)";
+  ctx.fillText("Wind mph", lx + 26, legendY);
+  lx += 104;
+
+  ctx.fillStyle = "rgba(55,116,185,0.34)";
+  ctx.fillRect(lx, legendY - 12, 18, 12);
+  ctx.fillStyle = "rgba(0,0,0,0.78)";
+  ctx.fillText("Rain chance", lx + 24, legendY);
+  lx += 124;
+
+  ctx.strokeStyle = "rgba(57,128,73,0.85)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(lx, legendY - 4);
+  ctx.lineTo(lx + 20, legendY - 4);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(0,0,0,0.78)";
+  ctx.fillText("Fishing window", lx + 26, legendY);
 
   ctx.textAlign = "left";
 }
@@ -1288,6 +1309,16 @@ function summarizeRainWindow(points) {
     String(Math.round(safeNum(peak.prob, 0))) +
     "% chance."
   );
+}
+
+function summarizeFishingWindows(windows) {
+  if (!windows || !windows.length) return "No sunrise or sunset based fishing windows available for this date.";
+
+  return windows
+    .map(function (w) {
+      return w.name + ": " + formatTime(w.start) + " to " + formatTime(w.end);
+    })
+    .join(" | ");
 }
 
 // ----------------------------
@@ -2131,60 +2162,19 @@ function renderHome() {
       dyn,
       `
       <div class="card">
-        <h3>Hourly wind</h3>
-        <div class="small muted">Wind speed at 10m in mph for the selected date.</div>
+        <h3>Fishing conditions by hour</h3>
+        <div class="small muted">Wind, rain chance, and best fishing windows for the selected date.</div>
         <div class="chartWrap">
-          <canvas id="wind_canvas" class="windChart"></canvas>
-        </div>
-      </div>
-    `
-    );
-
-    const canvas = document.getElementById("wind_canvas");
-    drawWindLineChart(canvas, points);
-
-    appendHtml(
-      dyn,
-      `
-      <div class="card">
-        <h3>Hourly rain chance</h3>
-        <div class="small muted">Chance of precipitation by time for the selected date.</div>
-        <div class="chartWrap">
-          <canvas id="rain_canvas" class="windChart"></canvas>
+          <canvas id="conditions_canvas" class="windChart"></canvas>
         </div>
         <div class="small muted" style="margin-top:8px;">${escHtml(summarizeRainWindow(rainPoints))}</div>
+        <div class="small muted" style="margin-top:6px;"><strong>Best windows:</strong> ${escHtml(summarizeFishingWindows(windows))}</div>
       </div>
     `
     );
 
-    const rainCanvas = document.getElementById("rain_canvas");
-    drawRainChanceChart(rainCanvas, rainPoints);
-
-    const bestHtml = windows.length
-      ? windows
-          .map(function (w) {
-            return (
-              "<li><strong>" +
-              escHtml(w.name) +
-              ":</strong> " +
-              escHtml(formatTime(w.start)) +
-              " to " +
-              escHtml(formatTime(w.end)) +
-              "</li>"
-            );
-          })
-          .join("")
-      : "<li>No sunrise/sunset data for this date.</li>";
-
-    appendHtml(
-      dyn,
-      `
-      <div class="card">
-        <h3>Best fishing windows</h3>
-        <ul class="list">${bestHtml}</ul>
-      </div>
-    `
-    );
+    const conditionsCanvas = document.getElementById("conditions_canvas");
+    drawFishingConditionsChart(conditionsCanvas, points, rainPoints, windows);
 
     const tipsHtml = tips
       .map(function (t) {
@@ -2207,16 +2197,13 @@ function renderHome() {
     let resizeTimer = null;
 
     window.addEventListener("resize", function () {
-      if (!document.getElementById("wind_canvas")) return;
+      if (!document.getElementById("conditions_canvas")) return;
 
       clearTimeout(resizeTimer);
 
       resizeTimer = setTimeout(function () {
-        const c = document.getElementById("wind_canvas");
-        if (c) drawWindLineChart(c, points);
-
-        const rc = document.getElementById("rain_canvas");
-        if (rc) drawRainChanceChart(rc, rainPoints);
+        const cc = document.getElementById("conditions_canvas");
+        if (cc) drawFishingConditionsChart(cc, points, rainPoints, windows);
       }, 150);
     });
   }

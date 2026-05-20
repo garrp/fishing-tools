@@ -762,34 +762,39 @@ function renderWeatherAlertBar(alerts) {
   const existing = document.getElementById("alert_bar");
   if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
 
+  if (!alerts || !alerts.length) {
+    return;
+  }
+
   const bar = document.createElement("div");
   bar.id = "alert_bar";
   bar.className = "alertBar";
 
-  if (!alerts || !alerts.length) {
-    bar.innerHTML = "<strong>No weather alerts</strong>";
-  } else {
-    const a = alerts[0];
-    const severe = a.severity === "Severe" || a.severity === "Extreme";
+  const a = alerts[0];
+  const severe = a.severity === "Severe" || a.severity === "Extreme";
 
-    if (severe) {
-      bar.className = "alertBar alertBarSevere";
-    }
-
-    const endText = formatAlertEnd(a);
-
-    bar.innerHTML =
-      "<strong>" +
-      escHtml(a.event || "Weather Alert") +
-      ":</strong> " +
-      escHtml(a.headline || "Active weather alert in this area.") +
-      (endText ? " Ends " + escHtml(endText) + "." : "") +
-      (a.url
-        ? ' <a href="' + escHtml(a.url) + '" target="_blank" rel="noopener">Details</a>'
-        : "");
+  if (severe) {
+    bar.className = "alertBar alertBarSevere";
   }
 
+  bar.innerHTML =
+    "<strong>" +
+    escHtml(a.event || "Weather Alert") +
+    ":</strong> " +
+    escHtml(a.headline || "Active weather alert in this area.") +
+    (a.ends || a.expires
+      ? ' <span class="alertUntil">Until ' + escHtml(formatAlertDateTime(a.ends || a.expires)) + "</span>"
+      : "") +
+    ' <button id="alert_details_btn" class="alertDetailsBtn" type="button">Details</button>';
+
   document.body.appendChild(bar);
+
+  const detailsBtn = document.getElementById("alert_details_btn");
+  if (detailsBtn) {
+    detailsBtn.addEventListener("click", function () {
+      showWeatherAlertDetails(alerts[0]);
+    });
+  }
 }
 
 // ----------------------------
@@ -1087,7 +1092,7 @@ function drawFishingConditionsChart(canvas, windPoints, rainPoints, windows) {
   const padL = cssW < 430 ? 78 : 94;
   const padR = 14;
   const padT = 18;
-  const padB = 46;
+  const padB = 34;
   const w = cssW - padL - padR;
   const h = cssH - padT - padB;
 
@@ -1338,27 +1343,6 @@ function drawFishingConditionsChart(canvas, windPoints, rainPoints, windows) {
     const idx = gridIndexes[ti];
     const tx = xFor(idx);
     ctx.fillText(hourLabel(points[idx].dt), tx, cssH - 28);
-  }
-
-  const legendY = cssH - 10;
-  let lx = padL;
-
-  ctx.textAlign = "left";
-  ctx.font = "11px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
-
-  for (let li = 0; li < lanes.length; li++) {
-    const lane2 = lanes[li];
-
-    ctx.strokeStyle = lane2.color;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(lx, legendY - 4);
-    ctx.lineTo(lx + 18, legendY - 4);
-    ctx.stroke();
-
-    ctx.fillStyle = "rgba(0,0,0,0.72)";
-    ctx.fillText(lane2.label, lx + 24, legendY);
-    lx += li === 0 ? 92 : 72;
   }
 
   ctx.textAlign = "left";

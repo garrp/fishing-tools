@@ -217,30 +217,65 @@ let app = null;
 
   .wrap { max-width: 760px; margin: 0 auto; padding: 12px 12px 36px 12px; }
 
-  .header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:6px; }
-  .logo { max-width: 60%; }
-  .logo img { width: 100%; max-width: 260px; height: auto; display:block; }
+  .header {
+    display:grid;
+    grid-template-columns: minmax(0, 50%) minmax(0, 50%);
+    align-items:center;
+    gap:10px;
+    margin-top:6px;
+  }
+
+  .logo {
+    width:100%;
+    max-width: 100%;
+    justify-self:start;
+  }
+
+  .logo img {
+    width: 100%;
+    max-width: 260px;
+    height: auto;
+    display:block;
+  }
+
+  .headerRight {
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    justify-content:center;
+    gap:8px;
+    min-width:0;
+  }
 
   .title {
-    text-align:right;
+    text-align:left;
     font-weight:900;
-    font-size:18px;
-    line-height:20px;
-    padding-top: 8px;
+    font-size:17px;
+    line-height:19px;
+    padding-top: 2px;
   }
+
   .small { font-size: 13px; opacity:0.92; }
   .muted { color: var(--muted); }
 
-  .nav { margin-top: 12px; margin-bottom: 10px; display:grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .nav {
+    margin-top: 0;
+    margin-bottom: 0;
+    display:grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+  }
 
   .navBtn {
     width:100%;
-    padding:10px 12px;
+    padding:8px 10px;
     border-radius:999px;
     border:1px solid var(--greenBorder);
     background: var(--green);
     color: var(--text);
     font-weight:900;
+    font-size:14px;
+    line-height:16px;
     cursor:pointer;
   }
 
@@ -434,12 +469,22 @@ let app = null;
 
   @media (max-width: 520px) {
     .wrap { padding: 10px 10px 30px 10px; }
-    .header { flex-direction: column; align-items:center; justify-content:center; gap:8px; }
-    .logo { max-width: 88%; }
-    .logo img { max-width: 280px; margin: 0 auto; }
-    .title { text-align:center; font-size: 18px; padding-top: 8px; }
 
-    .nav { grid-template-columns: repeat(2, 1fr); gap:10px; }
+    .header {
+      grid-template-columns: minmax(0, 50%) minmax(0, 50%);
+      align-items:center;
+      gap:8px;
+    }
+
+    .logo { width:100%; max-width:100%; }
+    .logo img { width:100%; max-width: 50vw; margin: 0; }
+
+    .headerRight { gap:7px; }
+    .title { text-align:left; font-size: 16px; line-height:18px; padding-top: 0; }
+
+    .nav { grid-template-columns: repeat(2, minmax(0, 1fr)); gap:6px; }
+    .navBtn { padding:8px 8px; font-size:13px; line-height:15px; }
+
     .grid2 { grid-template-columns: 1fr; }
 
     canvas.windChart { height: 330px; }
@@ -1417,13 +1462,15 @@ function renderHeaderAndNav() {
     escHtml(LOGO_URL) +
     '" alt="FishyNW">' +
     "    </a>" +
-    '    <div class="title">' +
+    '    <div class="headerRight">' +
+    '      <div class="title">' +
     escHtml(title) +
     '<div class="small muted">v ' +
     escHtml(APP_VERSION) +
     "</div></div>" +
+    '      <div class="nav" id="nav"></div>' +
+    "    </div>" +
     "  </div>" +
-    '  <div class="nav" id="nav"></div>' +
     '  <div id="page"></div>' +
     '  <div class="footer"><strong>FishyNW.com</strong><br>Independent Northwest fishing tools</div>' +
     "</div>";

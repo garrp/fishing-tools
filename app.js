@@ -467,6 +467,8 @@ let app = null;
     gap: 12px;
   }
 
+  #home_location_slot { min-width: 0; }
+
   @media (max-width: 520px) {
     .wrap { padding: 10px 10px 30px 10px; }
 
@@ -1520,24 +1522,40 @@ function pageEl() {
 function renderLocationPicker(container, placeKey, onResolved, opts) {
   const options = opts || {};
   const autoGps = !!options.autoGps;
+  const inline = !!options.inline;
 
   appendHtml(
     container,
-    `
-    <div class="card">
-      <h3>Location</h3>
-      <input id="${placeKey}_place" type="text"
-        placeholder="Example: Spokane, WA or 99201 or Hauser Lake" />
+    inline
+      ? `
+      <div>
+        <input id="${placeKey}_place" type="text"
+          placeholder="Example: Spokane, WA or 99201 or Hauser Lake" />
 
-      <div class="btnRow">
-        <button id="${placeKey}_search">Search place</button>
-        <button id="${placeKey}_gps">Use my location</button>
+        <div class="btnRow">
+          <button id="${placeKey}_search">Search place</button>
+          <button id="${placeKey}_gps">Use my location</button>
+        </div>
+
+        <div id="${placeKey}_matches" style="margin-top:10px;"></div>
+        <div id="${placeKey}_using" class="small muted" style="margin-top:10px;"></div>
       </div>
+    `
+      : `
+      <div class="card">
+        <h3>Location</h3>
+        <input id="${placeKey}_place" type="text"
+          placeholder="Example: Spokane, WA or 99201 or Hauser Lake" />
 
-      <div id="${placeKey}_matches" style="margin-top:10px;"></div>
-      <div id="${placeKey}_using" class="small muted" style="margin-top:10px;"></div>
-    </div>
-  `
+        <div class="btnRow">
+          <button id="${placeKey}_search">Search place</button>
+          <button id="${placeKey}_gps">Use my location</button>
+        </div>
+
+        <div id="${placeKey}_matches" style="margin-top:10px;"></div>
+        <div id="${placeKey}_using" class="small muted" style="margin-top:10px;"></div>
+      </div>
+    `
   );
 
   const usingEl = document.getElementById(placeKey + "_using");
@@ -2040,13 +2058,17 @@ function renderHome() {
     page,
     `
     <div class="card">
-      <h2>Weather/Wind + Best Times</h2>
-      <div class="small muted">Pick a date up to 7 days out. Set location and the app builds tiles, wind chart, and fishing windows.</div>
+      <h2>Trip setup</h2>
 
-      <div style="margin-top:12px;">
-        <div class="fieldLabel">Date</div>
-        <input id="home_date" type="date" />
-        <div class="small muted" style="margin-top:8px;">Forecast is typically available for the next 7 days.  Weather alerts will effect go/no-go chart.</div>
+      <div class="grid2" style="margin-top:12px;">
+        <div>
+          <div class="fieldLabel">Step 1: Pick a date</div>
+          <input id="home_date" type="date" />
+        </div>
+
+        <div id="home_location_slot">
+          <div class="fieldLabel">Step 2: Pick a location</div>
+        </div>
       </div>
     </div>
   `
@@ -2068,12 +2090,12 @@ function renderHome() {
   });
 
   renderLocationPicker(
-    page,
+    document.getElementById("home_location_slot"),
     "home",
     function () {
       renderHomeDynamic("location_resolved");
     },
-    { autoGps: true }
+    { autoGps: true, inline: true }
   );
 
   appendHtml(page, '<div id="home_dynamic"></div>');
@@ -2364,7 +2386,7 @@ function renderHome() {
       `
       <div class="card">
         <h3>Fishing conditions by hour</h3>
-        <div class="small muted">Wind, rain chance, and best fishing windows using one shared hourly timeline.</div>
+        <div class="small muted">Hourly planning view for the selected date.</div>
         <div class="chartWrap">
           <canvas id="conditions_canvas" class="windChart"></canvas>
         </div>

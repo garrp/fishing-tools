@@ -363,7 +363,7 @@ let app = null;
 
   canvas.windChart {
     width: 100%;
-    height: 260px;
+    height: 340px;
     display: block;
     border-radius: 12px;
     background: rgba(255,255,255,0.9);
@@ -442,7 +442,7 @@ let app = null;
     .nav { grid-template-columns: repeat(2, 1fr); gap:10px; }
     .grid2 { grid-template-columns: 1fr; }
 
-    canvas.windChart { height: 240px; }
+    canvas.windChart { height: 330px; }
 
     .consentInner { flex-direction: column; align-items: stretch; }
     .consentBtns { justify-content: stretch; min-width: 0; }
@@ -1076,7 +1076,7 @@ function drawFishingConditionsChart(canvas, windPoints, rainPoints, windows) {
 
   const points = buildCombinedConditionPoints(windPoints, rainPoints, windows);
   const cssW = canvas.clientWidth || 600;
-  const cssH = canvas.clientHeight || 260;
+  const cssH = canvas.clientHeight || 340;
   const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
 
   canvas.width = Math.floor(cssW * dpr);
@@ -1084,10 +1084,10 @@ function drawFishingConditionsChart(canvas, windPoints, rainPoints, windows) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
 
-  const padL = 42;
-  const padR = 42;
-  const padT = 16;
-  const padB = 54;
+  const padL = cssW < 430 ? 78 : 94;
+  const padR = 14;
+  const padT = 18;
+  const padB = 46;
   const w = cssW - padL - padR;
   const h = cssH - padT - padB;
 
@@ -1103,20 +1103,64 @@ function drawFishingConditionsChart(canvas, windPoints, rainPoints, windows) {
     maxWind = Math.max(maxWind, safeNum(points[i].wind, 0));
   }
 
-  const windTop = Math.max(10, Math.ceil((maxWind * 1.25) / 5) * 5);
+  const windTop = Math.max(10, Math.ceil((maxWind * 1.2) / 5) * 5);
+  const laneGap = 14;
+  const laneH = (h - laneGap * 2) / 3;
+
+  const lanes = [
+    {
+      key: "fishing",
+      label: "Fishing",
+      sub: "Best time",
+      color: "rgba(57,128,73,0.92)",
+      fill: "rgba(143,209,158,0.28)",
+      valueText: function (p) {
+        return String(Math.round(safeNum(p.fishing, 0))) + "%";
+      },
+      norm: function (p) {
+        return Math.max(0, Math.min(100, safeNum(p.fishing, 0)));
+      }
+    },
+    {
+      key: "wind",
+      label: "Wind",
+      sub: "mph",
+      color: "rgba(20,38,45,0.92)",
+      fill: "rgba(20,38,45,0.14)",
+      valueText: function (p) {
+        return String(Math.round(safeNum(p.wind, 0))) + " mph";
+      },
+      norm: function (p) {
+        return Math.max(0, Math.min(100, (safeNum(p.wind, 0) / windTop) * 100));
+      }
+    },
+    {
+      key: "rain",
+      label: "Rain",
+      sub: "Chance",
+      color: "rgba(55,116,185,0.92)",
+      fill: "rgba(55,116,185,0.22)",
+      valueText: function (p) {
+        return String(Math.round(safeNum(p.rain, 0))) + "%";
+      },
+      norm: function (p) {
+        return Math.max(0, Math.min(100, safeNum(p.rain, 0)));
+      }
+    }
+  ];
 
   function xFor(i) {
     return padL + (i / (points.length - 1)) * w;
   }
 
-  function yPct(v) {
-    const pct = Math.max(0, Math.min(100, Number(v) || 0));
-    return padT + (1 - pct / 100) * h;
+  function laneTop(idx) {
+    return padT + idx * (laneH + laneGap);
   }
 
-  function yWind(v) {
-    const mph = Math.max(0, Math.min(windTop, Number(v) || 0));
-    return padT + (1 - mph / windTop) * h;
+  function yFor(idx, pct) {
+    const top = laneTop(idx);
+    const p = Math.max(0, Math.min(100, Number(pct) || 0));
+    return top + (1 - p / 100) * laneH;
   }
 
   function hourLabel(dt) {
@@ -1127,148 +1171,195 @@ function drawFishingConditionsChart(canvas, windPoints, rainPoints, windows) {
     }
   }
 
-  // Chart background.
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fillRect(0, 0, cssW, cssH);
-
-  // Grid lines.
-  ctx.strokeStyle = "rgba(0,0,0,0.10)";
-  ctx.lineWidth = 1;
-  for (let g = 0; g <= 4; g++) {
-    const yy = padT + (g / 4) * h;
+  function drawRoundedRect(x, y, rw, rh, radius) {
+    const r = Math.max(0, Math.min(radius, rw / 2, rh / 2));
     ctx.beginPath();
-    ctx.moveTo(padL, yy);
-    ctx.lineTo(padL + w, yy);
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + rw - r, y);
+    ctx.quadraticCurveTo(x + rw, y, x + rw, y + r);
+    ctx.lineTo(x + rw, y + rh - r);
+    ctx.quadraticCurveTo(x + rw, y + rh, x + rw - r, y + rh);
+    ctx.lineTo(x + r, y + rh);
+    ctx.quadraticCurveTo(x, y + rh, x, y + rh - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  function valueAtIndex(lane, i) {
+    return lane.norm(points[i]);
+  }
+
+  function drawSmoothLine(lane, laneIndex) {
+    const top = laneTop(laneIndex);
+    const base = top + laneH;
+
+    ctx.beginPath();
+    ctx.moveTo(xFor(0), base);
+
+    for (let i = 0; i < points.length; i++) {
+      ctx.lineTo(xFor(i), yFor(laneIndex, valueAtIndex(lane, i)));
+    }
+
+    ctx.lineTo(xFor(points.length - 1), base);
+    ctx.closePath();
+    ctx.fillStyle = lane.fill;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(xFor(0), yFor(laneIndex, valueAtIndex(lane, 0)));
+
+    for (let i2 = 1; i2 < points.length; i2++) {
+      const x0 = xFor(i2 - 1);
+      const y0 = yFor(laneIndex, valueAtIndex(lane, i2 - 1));
+      const x1 = xFor(i2);
+      const y1 = yFor(laneIndex, valueAtIndex(lane, i2));
+      const midX = (x0 + x1) / 2;
+
+      ctx.bezierCurveTo(midX, y0, midX, y1, x1, y1);
+    }
+
+    ctx.strokeStyle = lane.color;
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
     ctx.stroke();
   }
 
-  // Fishing window vertical bands.
-  for (let b = 0; b < (windows || []).length; b++) {
-    const ww = windows[b];
-    if (!ww || !ww.start || !ww.end) continue;
+  function drawValueChip(lane, laneIndex) {
+    let bestIdx = 0;
+    let bestVal = valueAtIndex(lane, 0);
 
-    let startIdx = -1;
-    let endIdx = -1;
-
-    for (let p = 0; p < points.length; p++) {
-      const tt = points[p].dt.getTime();
-      if (startIdx < 0 && tt >= ww.start.getTime()) startIdx = p;
-      if (tt <= ww.end.getTime()) endIdx = p;
+    for (let i = 1; i < points.length; i++) {
+      const v = valueAtIndex(lane, i);
+      if (v > bestVal) {
+        bestVal = v;
+        bestIdx = i;
+      }
     }
 
-    if (startIdx >= 0 && endIdx >= startIdx) {
-      const x1 = xFor(startIdx);
-      const x2 = xFor(endIdx);
-      ctx.fillStyle = "rgba(143,209,158,0.12)";
-      ctx.fillRect(x1, padT, Math.max(3, x2 - x1), h);
-    }
-  }
+    const text = lane.valueText(points[bestIdx]);
+    const time = hourLabel(points[bestIdx].dt);
+    const chipText = text + " at " + time;
 
-  // Rain chance bars.
-  const barW = Math.max(3, (w / Math.max(1, points.length)) * 0.56);
-  for (let r = 0; r < points.length; r++) {
-    const rain = Math.max(0, Math.min(100, safeNum(points[r].rain, 0)));
-    const x = xFor(r);
-    const y = yPct(rain);
-    ctx.fillStyle = rain >= 60 ? "rgba(55,116,185,0.42)" : rain >= 30 ? "rgba(55,116,185,0.28)" : "rgba(55,116,185,0.13)";
-    ctx.fillRect(x - barW / 2, y, barW, padT + h - y);
-  }
+    ctx.font = "11px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+    const tw = ctx.measureText(chipText).width;
+    const chipW = Math.min(Math.max(tw + 16, 72), cssW - padL - 20);
+    const chipH = 22;
+    let x = xFor(bestIdx) - chipW / 2;
+    const y = laneTop(laneIndex) + 6;
 
-  // Fishing ebb and flow area.
-  ctx.beginPath();
-  ctx.moveTo(xFor(0), padT + h);
-  for (let f = 0; f < points.length; f++) {
-    ctx.lineTo(xFor(f), yPct(points[f].fishing));
-  }
-  ctx.lineTo(xFor(points.length - 1), padT + h);
-  ctx.closePath();
-  ctx.fillStyle = "rgba(94,166,111,0.18)";
-  ctx.fill();
+    x = Math.max(padL + 2, Math.min(cssW - chipW - 8, x));
 
-  ctx.strokeStyle = "rgba(57,128,73,0.85)";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(xFor(0), yPct(points[0].fishing));
-  for (let f2 = 1; f2 < points.length; f2++) {
-    ctx.lineTo(xFor(f2), yPct(points[f2].fishing));
-  }
-  ctx.stroke();
-
-  // Wind line.
-  ctx.strokeStyle = "rgba(7,27,31,0.90)";
-  ctx.lineWidth = 2.4;
-  ctx.beginPath();
-  ctx.moveTo(xFor(0), yWind(points[0].wind));
-  for (let i2 = 1; i2 < points.length; i2++) {
-    ctx.lineTo(xFor(i2), yWind(points[i2].wind));
-  }
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(7,27,31,0.85)";
-  for (let d = 0; d < points.length; d++) {
-    const xx = xFor(d);
-    const yy = yWind(points[d].wind);
-    ctx.beginPath();
-    ctx.arc(xx, yy, 2.2, 0, Math.PI * 2);
+    drawRoundedRect(x, y, chipW, chipH, 11);
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
     ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.12)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(0,0,0,0.78)";
+    ctx.textAlign = "center";
+    ctx.fillText(chipText, x + chipW / 2, y + 15);
   }
 
-  // Axes labels.
-  ctx.font = "11px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,0.96)";
+  ctx.fillRect(0, 0, cssW, cssH);
+
+  const gridIndexes = [
+    0,
+    Math.floor((points.length - 1) / 4),
+    Math.floor((points.length - 1) / 2),
+    Math.floor(((points.length - 1) * 3) / 4),
+    points.length - 1
+  ];
+
+  ctx.strokeStyle = "rgba(0,0,0,0.07)";
+  ctx.lineWidth = 1;
+
+  for (let gi = 0; gi < gridIndexes.length; gi++) {
+    const gx = xFor(gridIndexes[gi]);
+    ctx.beginPath();
+    ctx.moveTo(gx, padT);
+    ctx.lineTo(gx, padT + h);
+    ctx.stroke();
+  }
+
+  for (let l = 0; l < lanes.length; l++) {
+    const lane = lanes[l];
+    const top = laneTop(l);
+
+    drawRoundedRect(padL, top, w, laneH, 12);
+    ctx.fillStyle = "rgba(0,0,0,0.025)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.10)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(0,0,0,0.08)";
+    ctx.lineWidth = 1;
+
+    for (let rg = 1; rg <= 2; rg++) {
+      const ry = top + (rg / 3) * laneH;
+      ctx.beginPath();
+      ctx.moveTo(padL, ry);
+      ctx.lineTo(padL + w, ry);
+      ctx.stroke();
+    }
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = lane.color;
+    ctx.font = "700 13px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+    ctx.fillText(lane.label, 12, top + 20);
+
+    ctx.fillStyle = "rgba(0,0,0,0.58)";
+    ctx.font = "11px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+    ctx.fillText(lane.sub, 12, top + 36);
+
+    ctx.textAlign = "right";
+    ctx.fillStyle = "rgba(0,0,0,0.50)";
+    ctx.font = "10px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+
+    if (lane.key === "wind") {
+      ctx.fillText("top " + String(windTop) + " mph", padL - 8, top + laneH - 8);
+    } else {
+      ctx.fillText("0 to 100%", padL - 8, top + laneH - 8);
+    }
+
+    drawSmoothLine(lane, l);
+    drawValueChip(lane, l);
+  }
+
   ctx.fillStyle = "rgba(0,0,0,0.68)";
-  ctx.textAlign = "left";
-  ctx.fillText(String(windTop) + " mph", 4, padT + 10);
-  ctx.fillText(String(Math.round(windTop / 2)) + " mph", 4, padT + h / 2 + 4);
-  ctx.fillText("0 mph", 8, padT + h + 4);
-
-  ctx.textAlign = "right";
-  ctx.fillText("100%", cssW - 4, padT + 10);
-  ctx.fillText("50%", cssW - 4, padT + h / 2 + 4);
-  ctx.fillText("0%", cssW - 4, padT + h + 4);
-
-  // Hour labels.
-  const iStart = 0;
-  const iMid = Math.floor((points.length - 1) / 2);
-  const iEnd = points.length - 1;
-  ctx.fillStyle = "rgba(0,0,0,0.72)";
-  ctx.textAlign = "left";
-  ctx.fillText(hourLabel(points[iStart].dt), padL, padT + h + 18);
+  ctx.font = "11px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(hourLabel(points[iMid].dt), xFor(iMid), padT + h + 18);
-  ctx.textAlign = "right";
-  ctx.fillText(hourLabel(points[iEnd].dt), padL + w, padT + h + 18);
 
-  // Legend along the bottom of the canvas.
-  const legendY = cssH - 18;
+  for (let ti = 0; ti < gridIndexes.length; ti++) {
+    const idx = gridIndexes[ti];
+    const tx = xFor(idx);
+    ctx.fillText(hourLabel(points[idx].dt), tx, cssH - 28);
+  }
+
+  const legendY = cssH - 10;
   let lx = padL;
 
   ctx.textAlign = "left";
-  ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
+  ctx.font = "11px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif";
 
-  ctx.strokeStyle = "rgba(7,27,31,0.90)";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(lx, legendY - 4);
-  ctx.lineTo(lx + 20, legendY - 4);
-  ctx.stroke();
-  ctx.fillStyle = "rgba(0,0,0,0.78)";
-  ctx.fillText("Wind mph", lx + 26, legendY);
-  lx += 104;
+  for (let li = 0; li < lanes.length; li++) {
+    const lane2 = lanes[li];
 
-  ctx.fillStyle = "rgba(55,116,185,0.34)";
-  ctx.fillRect(lx, legendY - 12, 18, 12);
-  ctx.fillStyle = "rgba(0,0,0,0.78)";
-  ctx.fillText("Rain chance", lx + 24, legendY);
-  lx += 124;
+    ctx.strokeStyle = lane2.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(lx, legendY - 4);
+    ctx.lineTo(lx + 18, legendY - 4);
+    ctx.stroke();
 
-  ctx.strokeStyle = "rgba(57,128,73,0.85)";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(lx, legendY - 4);
-  ctx.lineTo(lx + 20, legendY - 4);
-  ctx.stroke();
-  ctx.fillStyle = "rgba(0,0,0,0.78)";
-  ctx.fillText("Fishing window", lx + 26, legendY);
+    ctx.fillStyle = "rgba(0,0,0,0.72)";
+    ctx.fillText(lane2.label, lx + 24, legendY);
+    lx += li === 0 ? 92 : 72;
+  }
 
   ctx.textAlign = "left";
 }
@@ -2163,7 +2254,7 @@ function renderHome() {
       `
       <div class="card">
         <h3>Fishing conditions by hour</h3>
-        <div class="small muted">Wind, rain chance, and best fishing windows for the selected date.</div>
+        <div class="small muted">Wind, rain chance, and best fishing windows using one shared hourly timeline.</div>
         <div class="chartWrap">
           <canvas id="conditions_canvas" class="windChart"></canvas>
         </div>

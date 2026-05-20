@@ -22,7 +22,7 @@
   - Restored dropdown species tips.
 */
 
-const APP_VERSION = "Beta 1.0";
+const APP_VERSION = "1";
 
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
@@ -918,7 +918,7 @@ async function fetchWeatherWindMulti(lat, lon) {
     "&longitude=" +
     encodeURIComponent(lon) +
     "&daily=temperature_2m_min,temperature_2m_max,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max" +
-    "&hourly=wind_speed_10m,precipitation_probability,precipitation" +
+    "&hourly=wind_speed_10m,wind_direction_10m,wind_direction_10m,precipitation_probability,precipitation" +
     "&wind_speed_unit=mph" +
     "&precipitation_unit=inch" +
     "&temperature_unit=fahrenheit" +
@@ -1908,6 +1908,81 @@ function computeExposureTips(inputs) {
   return tips;
 }
 
+
+function windDirectionLabel(deg) {
+  const n = Number(deg);
+  if (!Number.isFinite(n)) return "";
+
+  const dirs = [
+    "N", "NNE", "NE", "ENE",
+    "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW",
+    "W", "WNW", "NW", "NNW"
+  ];
+
+  const idx = Math.round((((n % 360) + 360) % 360) / 22.5) % 16;
+  return dirs[idx];
+}
+
+function summarizeWindSpeedDirection(points) {
+  if (!points || !points.length) {
+    return "Hourly wind direction data is not available for this date.";
+  }
+
+  let maxWind = -Infinity;
+  let maxPoint = null;
+  let sumSin = 0;
+  let sumCos = 0;
+  let dirCount = 0;
+
+  for (let i = 0; i < points.length; i++) {
+    const mph = safeNum(points[i].mph, 0);
+    const dir = Number(points[i].dir);
+
+    if (mph > maxWind) {
+      maxWind = mph;
+      maxPoint = points[i];
+    }
+
+    if (Number.isFinite(dir)) {
+      const rad = (dir * Math.PI) / 180;
+      sumSin += Math.sin(rad);
+      sumCos += Math.cos(rad);
+      dirCount += 1;
+    }
+  }
+
+  if (!maxPoint || !Number.isFinite(maxWind)) {
+    return "Hourly wind data is not available for this date.";
+  }
+
+  let avgDirText = "";
+  if (dirCount > 0) {
+    const avgRad = Math.atan2(sumSin / dirCount, sumCos / dirCount);
+    const avgDeg = ((avgRad * 180) / Math.PI + 360) % 360;
+    const avgLabel = windDirectionLabel(avgDeg);
+    if (avgLabel) {
+      avgDirText = " Average direction is around " + avgLabel + ".";
+    }
+  }
+
+  const peakDir = windDirectionLabel(maxPoint.dir);
+  const peakTime = formatTime(maxPoint.dt);
+  const peakDirText = peakDir ? " from " + peakDir : "";
+
+  return (
+    "Peak hourly wind is expected near " +
+    peakTime +
+    " at about " +
+    String(Math.round(maxWind)) +
+    " mph" +
+    peakDirText +
+    "." +
+    avgDirText
+  );
+}
+
+
 // ----------------------------
 // Home
 // ----------------------------
@@ -2088,12 +2163,6 @@ function renderHome() {
       hasAlerts: alertsForDate.length > 0
     });
 
-    const tips = computeExposureTips({
-      tmin: tmin,
-      tmax: tmax,
-      windMax: windMax,
-      gustMax: gustMax
-    });
 
     const pointsRaw = filterHourlyToDate(
       wx.hourly.time || [],
@@ -2101,22 +2170,32 @@ function renderHome() {
       useIso
     );
 
+    const dirRaw = filterHourlyToDate(
+      wx.hourly.time || [],
+      wx.hourly.windDir || [],
+      useIso
+    );
+
     const points = [];
 
     for (let i = 0; i < pointsRaw.length; i++) {
       if (i % 2 === 0) {
+        const dirAt = dirRaw[i] ? Number(dirRaw[i].v) : null;
         points.push({
           dt: pointsRaw[i].dt,
-          mph: safeNum(pointsRaw[i].v, 0)
+          mph: safeNum(pointsRaw[i].v, 0),
+          dir: dirAt
         });
       }
     }
 
     if (points.length < 2) {
       for (let j = 0; j < pointsRaw.length; j++) {
+        const dirAt2 = dirRaw[j] ? Number(dirRaw[j].v) : null;
         points.push({
           dt: pointsRaw[j].dt,
-          mph: safeNum(pointsRaw[j].v, 0)
+          mph: safeNum(pointsRaw[j].v, 0),
+          dir: dirAt2
         });
       }
     }

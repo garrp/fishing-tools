@@ -918,7 +918,7 @@ async function fetchWeatherWindMulti(lat, lon) {
     "&longitude=" +
     encodeURIComponent(lon) +
     "&daily=temperature_2m_min,temperature_2m_max,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max" +
-    "&hourly=wind_speed_10m,wind_direction_10m,wind_direction_10m,precipitation_probability,precipitation" +
+    "&hourly=wind_speed_10m,wind_direction_10m,precipitation_probability,precipitation" +
     "&wind_speed_unit=mph" +
     "&precipitation_unit=inch" +
     "&temperature_unit=fahrenheit" +
@@ -1400,7 +1400,7 @@ function summarizeFishingWindows(windows) {
 // UI: Header + Nav
 // ----------------------------
 const PAGE_TITLES = {
-  Home: "Weather/Wind + Best Times",
+  Home: "Planning Tools",
   "Trolling depth calculator": "Trolling Depth Calculator",
   "Species tips": "Species Tips",
   Speedometer: "Speedometer"
@@ -2322,7 +2322,7 @@ function renderHome() {
           <canvas id="conditions_canvas" class="windChart"></canvas>
         </div>
         <div class="small muted" style="margin-top:8px;">${escHtml(summarizeRainWindow(rainPoints))}</div>
-        <div class="small muted" style="margin-top:6px;"><strong>Best windows:</strong> ${escHtml(summarizeFishingWindows(windows))}</div>
+        <div id="wind_summary_text" class="small muted" style="margin-top:6px;"></div>
       </div>
     `
     );
@@ -2330,21 +2330,10 @@ function renderHome() {
     const conditionsCanvas = document.getElementById("conditions_canvas");
     drawFishingConditionsChart(conditionsCanvas, points, rainPoints, windows);
 
-    const tipsHtml = tips
-      .map(function (t) {
-        return "<li>" + escHtml(t) + "</li>";
-      })
-      .join("");
-
-    appendHtml(
-      dyn,
-      `
-      <div class="card">
-        <h3>Exposure tips</h3>
-        <ul class="list">${tipsHtml}</ul>
-      </div>
-    `
-    );
+    const windSummaryEl = document.getElementById("wind_summary_text");
+    if (windSummaryEl) {
+      windSummaryEl.textContent = summarizeWindSpeedDirection(points);
+    }
 
     renderWeatherAlertBar(alertsForDate);
 

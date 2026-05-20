@@ -469,6 +469,80 @@ let app = null;
 
   #home_location_slot { min-width: 0; }
 
+  .smartLocRow {
+    display:grid;
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+    align-items:center;
+  }
+
+  .smartLocInputWrap {
+    position: relative;
+    min-width: 0;
+  }
+
+  .smartLocInputWrap input {
+    padding-right: 38px;
+  }
+
+  .smartLocIcon {
+    position:absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-weight: 900;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  .gpsMiniBtn {
+    width:auto;
+    min-width: 46px;
+    padding: 10px 11px;
+    border-radius:999px;
+    white-space:nowrap;
+  }
+
+  .smartLocStatus {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .smartLocStatus strong {
+    color: rgba(0,0,0,0.78);
+  }
+
+  .smartLocResults {
+    margin-top: 8px;
+    border: 1px solid rgba(0,0,0,0.12);
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .smartLocResultBtn {
+    display:block;
+    width:100%;
+    border:0;
+    border-bottom:1px solid rgba(0,0,0,0.08);
+    background:#fff;
+    color:rgba(0,0,0,0.82);
+    text-align:left;
+    border-radius:0;
+    padding: 10px 12px;
+    font-weight:800;
+  }
+
+  .smartLocResultBtn:last-child {
+    border-bottom:0;
+  }
+
+  .smartLocResultBtn:hover {
+    background: rgba(143,209,158,0.18);
+  }
+
+
   @media (max-width: 520px) {
     .wrap { padding: 10px 10px 30px 10px; }
 
@@ -596,20 +670,204 @@ function filterHourlyToDate(times, values, dateIso) {
   });
 }
 
+const STATE_NAME_BY_ABBR = {
+  ID: "Idaho",
+  WA: "Washington",
+  OR: "Oregon",
+  MT: "Montana",
+  CA: "California",
+  NV: "Nevada",
+  UT: "Utah",
+  WY: "Wyoming"
+};
+
+const FISHYNW_LOCATION_ALIASES = {
+  "cocolalla": "Cocolalla, ID",
+  "cocolalla lake": "Cocolalla Lake, ID",
+  "hauser": "Hauser Lake, ID",
+  "hauser lake": "Hauser Lake, ID",
+  "fernan": "Fernan Lake, ID",
+  "fernan lake": "Fernan Lake, ID",
+  "wolf lodge": "Wolf Lodge Bay, ID",
+  "wolf lodge bay": "Wolf Lodge Bay, ID",
+  "denton": "Denton Slough, ID",
+  "denton slough": "Denton Slough, ID",
+  "pend oreille": "Lake Pend Oreille, ID",
+  "lake pend oreille": "Lake Pend Oreille, ID",
+  "newman": "Newman Lake, WA",
+  "newman lake": "Newman Lake, WA",
+  "priest": "Priest Lake, ID",
+  "priest lake": "Priest Lake, ID",
+  "roosevelt": "Lake Roosevelt, WA",
+  "lake roosevelt": "Lake Roosevelt, WA",
+  "hayden": "Hayden, ID",
+  "hayden lake": "Hayden Lake, ID",
+  "spirit": "Spirit Lake, ID",
+  "spirit lake": "Spirit Lake, ID",
+  "rose": "Rose Lake, ID",
+  "rose lake": "Rose Lake, ID",
+  "anderson": "Anderson Lake, ID",
+  "anderson lake": "Anderson Lake, ID",
+  "avondale": "Avondale Lake, ID",
+  "avondale lake": "Avondale Lake, ID",
+  "twin": "Twin Lakes, ID",
+  "twin lakes": "Twin Lakes, ID",
+  "dworshak": "Dworshak Reservoir, ID",
+  "dworshak reservoir": "Dworshak Reservoir, ID",
+  "kettle falls": "Kettle Falls, WA",
+  "black lake": "Black Lake, ID",
+  "killarney": "Killarney Lake, ID",
+  "killarney lake": "Killarney Lake, ID"
+};
+
+function cleanLocationKey(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[.,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizePlaceQuery(s) {
   const x0 = String(s || "").trim().replace(/\s+/g, " ");
   if (!x0) return "";
 
-  const m = x0.match(/^(.+?),\s*([a-zA-Z]{2})$/);
+  const alias = FISHYNW_LOCATION_ALIASES[cleanLocationKey(x0)];
+  if (alias) return alias;
 
-  if (m) {
-    const city = String(m[1] || "").trim();
-    const st = String(m[2] || "").trim().toUpperCase();
+  const commaMatch = x0.match(/^(.+?),\s*([a-zA-Z]{2}|[a-zA-Z ]+)$/);
+  if (commaMatch) {
+    const city = String(commaMatch[1] || "").trim();
+    const stRaw = String(commaMatch[2] || "").trim();
+    const stUpper = stRaw.toUpperCase();
 
-    if (city && st) return city + ", " + st;
+    if (city && /^[A-Z]{2}$/.test(stUpper)) {
+      return city + ", " + stUpper;
+    }
+
+    return city + ", " + stRaw;
+  }
+
+  const tailMatch = x0.match(/^(.+?)\s+([a-zA-Z]{2})$/);
+  if (tailMatch) {
+    const city2 = String(tailMatch[1] || "").trim();
+    const st2 = String(tailMatch[2] || "").trim().toUpperCase();
+
+    if (city2 && STATE_NAME_BY_ABBR[st2]) {
+      return city2 + ", " + st2;
+    }
+  }
+
+  const fullStateMatch = x0.match(/^(.+?)\s+(Idaho|Washington|Oregon|Montana|California|Nevada|Utah|Wyoming)$/i);
+  if (fullStateMatch) {
+    return String(fullStateMatch[1] || "").trim() + ", " + String(fullStateMatch[2] || "").trim();
   }
 
   return x0;
+}
+
+function buildLocationSearchQueries(input) {
+  const raw = String(input || "").trim().replace(/\s+/g, " ");
+  const normalized = normalizePlaceQuery(raw);
+  const out = [];
+
+  function add(q) {
+    const s = String(q || "").trim();
+    if (!s) return;
+    if (out.indexOf(s) < 0) out.push(s);
+  }
+
+  add(normalized);
+  add(raw);
+
+  const mComma = normalized.match(/^(.+?),\s*([A-Z]{2})$/);
+  if (mComma) {
+    const city = String(mComma[1] || "").trim();
+    const abbr = String(mComma[2] || "").trim().toUpperCase();
+    const full = STATE_NAME_BY_ABBR[abbr];
+
+    add(city + ", " + abbr);
+    if (full) add(city + ", " + full);
+    add(city);
+  }
+
+  const mTail = raw.match(/^(.+?)\s+([a-zA-Z]{2})$/);
+  if (mTail) {
+    const city2 = String(mTail[1] || "").trim();
+    const abbr2 = String(mTail[2] || "").trim().toUpperCase();
+    const full2 = STATE_NAME_BY_ABBR[abbr2];
+
+    add(city2 + ", " + abbr2);
+    if (full2) add(city2 + ", " + full2);
+    add(city2);
+  }
+
+  const alias = FISHYNW_LOCATION_ALIASES[cleanLocationKey(raw)];
+  if (alias) add(alias);
+
+  return out;
+}
+
+function locationScore(match, query) {
+  const label = String(match && match.label ? match.label : "");
+  const key = cleanLocationKey(label);
+  const q = cleanLocationKey(query);
+  let score = 0;
+
+  if (!label) return score;
+
+  if (key === q) score += 100;
+  if (key.indexOf(q) >= 0) score += 40;
+
+  if (label.indexOf(", Idaho") >= 0 || label.indexOf(", ID") >= 0) score += 18;
+  if (label.indexOf(", Washington") >= 0 || label.indexOf(", WA") >= 0) score += 14;
+  if (label.indexOf(", United States") >= 0) score += 10;
+
+  const qState = String(query || "").toUpperCase().match(/(?:,|\s)(ID|WA|OR|MT|CA|NV|UT|WY)$/);
+  if (qState) {
+    const abbr = qState[1];
+    const full = STATE_NAME_BY_ABBR[abbr] || "";
+    if (full && label.indexOf(", " + full) >= 0) score += 35;
+  }
+
+  return score;
+}
+
+async function smartGeocodeSearch(input, count) {
+  const queries = buildLocationSearchQueries(input);
+  const combined = [];
+
+  for (let i = 0; i < queries.length; i++) {
+    const q = queries[i];
+    const results = await geocodeSearch(q, count || 8);
+
+    for (let j = 0; j < results.length; j++) {
+      const r = results[j];
+      const id = String(Number(r.lat).toFixed(4)) + "," + String(Number(r.lon).toFixed(4));
+
+      if (combined.some(function (x) {
+        return x.id === id;
+      })) {
+        continue;
+      }
+
+      combined.push({
+        id: id,
+        label: r.label,
+        lat: r.lat,
+        lon: r.lon,
+        score: locationScore(r, q) + Math.max(0, 20 - i * 3)
+      });
+    }
+
+    if (combined.length >= 5 && i >= 1) break;
+  }
+
+  combined.sort(function (a, b) {
+    return b.score - a.score;
+  });
+
+  return combined.slice(0, count || 8);
 }
 
 function stopSpeedWatchIfRunning() {
@@ -1529,31 +1787,33 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     inline
       ? `
       <div>
-        <input id="${placeKey}_place" type="text"
-          placeholder="Example: Spokane, WA or 99201 or Hauser Lake" />
-
-        <div class="btnRow">
-          <button id="${placeKey}_search">Search place</button>
-          <button id="${placeKey}_gps">Use my location</button>
+        <div class="smartLocRow">
+          <div class="smartLocInputWrap">
+            <input id="${placeKey}_place" type="text"
+              placeholder="City, lake, or ZIP" autocomplete="off" />
+            <span class="smartLocIcon">Search</span>
+          </div>
+          <button id="${placeKey}_gps" class="gpsMiniBtn" type="button">GPS</button>
         </div>
 
-        <div id="${placeKey}_matches" style="margin-top:10px;"></div>
-        <div id="${placeKey}_using" class="small muted" style="margin-top:10px;"></div>
+        <div id="${placeKey}_matches"></div>
+        <div id="${placeKey}_using" class="smartLocStatus"></div>
       </div>
     `
       : `
       <div class="card">
         <h3>Location</h3>
-        <input id="${placeKey}_place" type="text"
-          placeholder="Example: Spokane, WA or 99201 or Hauser Lake" />
-
-        <div class="btnRow">
-          <button id="${placeKey}_search">Search place</button>
-          <button id="${placeKey}_gps">Use my location</button>
+        <div class="smartLocRow">
+          <div class="smartLocInputWrap">
+            <input id="${placeKey}_place" type="text"
+              placeholder="City, lake, or ZIP" autocomplete="off" />
+            <span class="smartLocIcon">Search</span>
+          </div>
+          <button id="${placeKey}_gps" class="gpsMiniBtn" type="button">GPS</button>
         </div>
 
-        <div id="${placeKey}_matches" style="margin-top:10px;"></div>
-        <div id="${placeKey}_using" class="small muted" style="margin-top:10px;"></div>
+        <div id="${placeKey}_matches"></div>
+        <div id="${placeKey}_using" class="smartLocStatus"></div>
       </div>
     `
   );
@@ -1562,7 +1822,9 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
   const matchesEl = document.getElementById(placeKey + "_matches");
   const placeInput = document.getElementById(placeKey + "_place");
   const gpsBtn = document.getElementById(placeKey + "_gps");
-  const searchBtn = document.getElementById(placeKey + "_search");
+
+  let searchTimer = null;
+  let searchToken = 0;
 
   function renderUsing() {
     if (hasResolvedLocation()) {
@@ -1576,6 +1838,93 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     }
   }
 
+  function chooseLocation(chosen, reason) {
+    if (!chosen) return;
+
+    setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
+
+    placeInput.value = chosen.label;
+    matchesEl.innerHTML = "";
+    renderUsing();
+
+    if (typeof onResolved === "function") {
+      onResolved(reason || "smart_pick");
+    }
+  }
+
+  function renderChoices(matches) {
+    if (!matches || !matches.length) {
+      matchesEl.innerHTML = "";
+      return;
+    }
+
+    const top = matches.slice(0, 4);
+
+    matchesEl.innerHTML =
+      '<div class="smartLocResults">' +
+      top
+        .map(function (m, i) {
+          return (
+            '<button class="smartLocResultBtn" type="button" data-loc-idx="' +
+            String(i) +
+            '">' +
+            escHtml(m.label) +
+            "</button>"
+          );
+        })
+        .join("") +
+      "</div>";
+
+    const btns = matchesEl.querySelectorAll("[data-loc-idx]");
+    for (let i = 0; i < btns.length; i++) {
+      btns[i].addEventListener("click", function () {
+        const idx = Number(this.getAttribute("data-loc-idx"));
+        chooseLocation(top[idx], "manual_choice");
+      });
+    }
+  }
+
+  async function runSmartSearch(raw, sourceReason) {
+    const q = String(raw || "").trim();
+
+    if (!q) {
+      clearResolvedLocation();
+      matchesEl.innerHTML = "";
+      usingEl.textContent = "";
+      if (typeof onResolved === "function") {
+        onResolved("cleared_empty");
+      }
+      return;
+    }
+
+    const token = ++searchToken;
+    usingEl.textContent = "Searching...";
+    matchesEl.innerHTML = "";
+
+    const matches = await smartGeocodeSearch(q, 6);
+
+    if (token !== searchToken) return;
+
+    state.matches = matches;
+    state.selectedIndex = 0;
+
+    if (!matches.length) {
+      usingEl.textContent = "No match yet. Try a nearby city, lake name, or ZIP.";
+      return;
+    }
+
+    const best = matches[0];
+    const second = matches[1];
+
+    if (!second || best.score - second.score >= 18 || best.score >= 65) {
+      chooseLocation(best, sourceReason || "smart_auto");
+      return;
+    }
+
+    usingEl.innerHTML = "<strong>Pick the closest match:</strong>";
+    renderChoices(matches);
+  }
+
   if (hasResolvedLocation()) {
     placeInput.value = state.placeLabel ? state.placeLabel : "";
     renderUsing();
@@ -1585,6 +1934,8 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     const raw = String(placeInput.value || "");
     const val = raw.trim();
 
+    clearTimeout(searchTimer);
+
     if (hasResolvedLocation()) {
       const currentLabel = String(state.placeLabel || "").trim();
 
@@ -1592,10 +1943,6 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
         clearResolvedLocation();
         matchesEl.innerHTML = "";
         usingEl.textContent = "";
-
-        if (typeof onResolved === "function") {
-          onResolved("auto_cleared_by_typing");
-        }
       }
 
       if (!val) {
@@ -1608,6 +1955,20 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
         }
       }
     }
+
+    if (!val) return;
+
+    searchTimer = setTimeout(function () {
+      runSmartSearch(val, "smart_typeahead");
+    }, 550);
+  });
+
+  placeInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      clearTimeout(searchTimer);
+      runSmartSearch(placeInput.value, "enter_search");
+    }
   });
 
   function doGps() {
@@ -1616,7 +1977,8 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
       return;
     }
 
-    usingEl.textContent = "Requesting location permission...";
+    usingEl.textContent = "Requesting GPS...";
+    matchesEl.innerHTML = "";
 
     navigator.geolocation.getCurrentPosition(
       function (pos) {
@@ -1629,7 +1991,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
         state.selectedIndex = 0;
         matchesEl.innerHTML = "";
 
-        placeInput.value = "Locating nearest city...";
+        placeInput.value = "Current location";
 
         usingEl.innerHTML =
           "<strong>Using:</strong> Current location (" +
@@ -1646,8 +2008,6 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
           if (label) {
             setResolvedLocation(lat, lon, label);
             placeInput.value = label;
-          } else {
-            placeInput.value = "Current location";
           }
 
           renderUsing();
@@ -1667,73 +2027,6 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
 
   gpsBtn.addEventListener("click", function () {
     doGps();
-  });
-
-  searchBtn.addEventListener("click", async function () {
-    const q = normalizePlaceQuery(placeInput.value);
-
-    if (!q) {
-      usingEl.textContent = "Type a place name or ZIP, or use your location.";
-      return;
-    }
-
-    usingEl.textContent = "Searching...";
-
-    const matches = await geocodeSearch(q, 10);
-
-    state.matches = matches;
-    state.selectedIndex = 0;
-
-    if (!matches.length) {
-      matchesEl.innerHTML = "";
-      usingEl.textContent = "No matches. Try City, State or ZIP.";
-      return;
-    }
-
-    const optionsHtml = matches
-      .map(function (m, i) {
-        return '<option value="' + i + '">' + escHtml(m.label) + "</option>";
-      })
-      .join("");
-
-    matchesEl.innerHTML =
-      '<div class="small"><strong>Choose the correct match</strong></div>' +
-      '<select id="' +
-      placeKey +
-      '_select" style="margin-top:8px;">' +
-      optionsHtml +
-      "</select>" +
-      '<div style="margin-top:10px;">' +
-      '<button id="' +
-      placeKey +
-      '_use" style="width:100%;">Use this place</button>' +
-      "</div>" +
-      '<div class="small muted" style="margin-top:8px;">Pick the correct match, then tap Use this place.</div>';
-
-    document
-      .getElementById(placeKey + "_select")
-      .addEventListener("change", function (e) {
-        state.selectedIndex = Number(e.target.value);
-      });
-
-    document
-      .getElementById(placeKey + "_use")
-      .addEventListener("click", function () {
-        const chosen = state.matches[state.selectedIndex];
-        if (!chosen) return;
-
-        setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
-
-        placeInput.value = chosen.label;
-        matchesEl.innerHTML = "";
-        renderUsing();
-
-        if (typeof onResolved === "function") {
-          onResolved("search_pick");
-        }
-      });
-
-    usingEl.textContent = "";
   });
 
   if (autoGps && !hasResolvedLocation()) {
@@ -2067,7 +2360,7 @@ function renderHome() {
         </div>
 
         <div id="home_location_slot">
-          <div class="fieldLabel">Step 2: Pick a location</div>
+          <div class="fieldLabel">Step 2: Location</div>
         </div>
       </div>
     </div>

@@ -22,7 +22,7 @@
   - Restored dropdown species tips.
 */
 
-const APP_VERSION = "V1.01";
+const APP_VERSION = "V1.02";
 
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";

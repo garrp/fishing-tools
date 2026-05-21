@@ -887,8 +887,9 @@ const FISHYNW_LOCATION_ALIASES = {
   "cocolalla lake": "Cocolalla Lake, ID",
   "hauser": "Hauser Lake, ID",
   "hauser lake": "Hauser Lake, ID",
-  "fernan": "Fernan Lake, ID",
-  "fernan lake": "Fernan Lake, ID",
+  "fernan": "Fernan Lake Village, ID",
+  "fernan lake": "Fernan Lake Village, ID",
+  "fernan lake village": "Fernan Lake Village, ID",
   "wolf lodge": "Wolf Lodge Bay, ID",
   "wolf lodge bay": "Wolf Lodge Bay, ID",
   "denton": "Denton Slough, ID",
@@ -918,7 +919,16 @@ const FISHYNW_LOCATION_ALIASES = {
   "kettle falls": "Kettle Falls, WA",
   "black lake": "Black Lake, ID",
   "killarney": "Killarney Lake, ID",
-  "killarney lake": "Killarney Lake, ID"
+  "killarney lake": "Killarney Lake, ID",
+  "coeur d alene": "Coeur d'Alene, ID",
+  "coeur dalene": "Coeur d'Alene, ID",
+  "coeur d'alene": "Coeur d'Alene, ID",
+  "cda": "Coeur d'Alene, ID",
+  "post falls": "Post Falls, ID",
+  "rathdrum": "Rathdrum, ID",
+  "sandpoint": "Sandpoint, ID",
+  "bayview": "Bayview, ID",
+  "athol": "Athol, ID"
 };
 
 function cleanLocationKey(s) {
@@ -967,6 +977,14 @@ function normalizePlaceQuery(s) {
   return x0;
 }
 
+function stripStateWordsFromKey(key) {
+  return String(key || "")
+    .replace(/\b(idaho|washington|oregon|montana|california|nevada|utah|wyoming)\b/g, "")
+    .replace(/\b(id|wa|or|mt|ca|nv|ut|wy)\b$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function buildLocationSearchQueries(input) {
   const raw = String(input || "").trim().replace(/\s+/g, " ");
   const normalized = normalizePlaceQuery(raw);
@@ -981,61 +999,111 @@ function buildLocationSearchQueries(input) {
   add(normalized);
   add(raw);
 
-  const mComma = normalized.match(/^(.+?),\s*([A-Z]{2})$/);
-  if (mComma) {
-    const city = String(mComma[1] || "").trim();
-    const abbr = String(mComma[2] || "").trim().toUpperCase();
+  const rawKey = cleanLocationKey(raw);
+  const strippedKey = stripStateWordsFromKey(rawKey);
+  const alias = FISHYNW_LOCATION_ALIASES[rawKey] || FISHYNW_LOCATION_ALIASES[strippedKey];
+
+  if (alias) add(alias);
+
+  const comma = normalized.match(/^(.+?),\s*([A-Z]{2}|[A-Za-z ]+)$/);
+  if (comma) {
+    const city = String(comma[1] || "").trim();
+    const statePart = String(comma[2] || "").trim();
+    const abbr = statePart.toUpperCase();
     const full = STATE_NAME_BY_ABBR[abbr];
 
-    add(city + ", " + abbr);
-    if (full) add(city + ", " + full);
+    add(city + ", " + statePart);
+    if (/^[A-Z]{2}$/.test(abbr) && full) {
+      add(city + ", " + full);
+      add(city + ", " + abbr + ", United States");
+      add(city + ", " + full + ", United States");
+    }
     add(city);
   }
 
-  const mTail = raw.match(/^(.+?)\s+([a-zA-Z]{2})$/);
-  if (mTail) {
-    const city2 = String(mTail[1] || "").trim();
-    const abbr2 = String(mTail[2] || "").trim().toUpperCase();
+  const tail = raw.match(/^(.+?)\s+([a-zA-Z]{2})$/);
+  if (tail) {
+    const city2 = String(tail[1] || "").trim();
+    const abbr2 = String(tail[2] || "").trim().toUpperCase();
     const full2 = STATE_NAME_BY_ABBR[abbr2];
 
     add(city2 + ", " + abbr2);
-    if (full2) add(city2 + ", " + full2);
+    if (full2) {
+      add(city2 + ", " + full2);
+      add(city2 + ", " + full2 + ", United States");
+    }
     add(city2);
   }
 
-  const alias = FISHYNW_LOCATION_ALIASES[cleanLocationKey(raw)];
-  if (alias) add(alias);
+  if (strippedKey && strippedKey !== rawKey) {
+    add(strippedKey);
+  }
 
   return out;
 }
 
-function locationScore(match, query) {
+function stateHintFromQuery(query) {
+  const q = String(query || "").trim();
+  const upper = q.toUpperCase();
+  const tail = upper.match(/(?:,|\s)(ID|WA|OR|MT|CA|NV|UT|WY)$/);
+  if (tail) return tail[1];
+
+  const lower = q.toLowerCase();
+  for (const abbr in STATE_NAME_BY_ABBR) {
+    if (lower.indexOf(STATE_NAME_BY_ABBR[abbr].toLowerCase()) >= 0) return abbr;
+  }
+
+  return "";
+}
+
+function labelHasState(match, abbr) {
+  if (!match || !abbr) return false;
+  const label = String(match.label || "");
+  const full = STATE_NAME_BY_ABBR[abbr] || "";
+  return (full && label.indexOf(", " + full) >= 0) || label.indexOf(", " + abbr) >= 0;
+}
+
+function locationScore(match, query, originalInput) {
   const label = String(match && match.label ? match.label : "");
-  const key = cleanLocationKey(label);
+  const labelKey = cleanLocationKey(label);
   const q = cleanLocationKey(query);
+  const original = cleanLocationKey(originalInput || query);
+  const strippedOriginal = stripStateWordsFromKey(original);
   let score = 0;
 
   if (!label) return score;
 
-  if (key === q) score += 100;
-  if (key.indexOf(q) >= 0) score += 40;
+  if (labelKey === q) score += 100;
+  if (labelKey.indexOf(q) >= 0) score += 45;
+  if (strippedOriginal && labelKey.indexOf(strippedOriginal) >= 0) score += 45;
 
-  if (label.indexOf(", Idaho") >= 0 || label.indexOf(", ID") >= 0) score += 18;
-  if (label.indexOf(", Washington") >= 0 || label.indexOf(", WA") >= 0) score += 14;
-  if (label.indexOf(", United States") >= 0) score += 10;
+  const alias = FISHYNW_LOCATION_ALIASES[original] || FISHYNW_LOCATION_ALIASES[strippedOriginal];
+  if (alias && cleanLocationKey(alias) === labelKey) score += 120;
+  if (alias && labelKey.indexOf(cleanLocationKey(alias).split(" ")[0]) >= 0) score += 35;
 
-  const qState = String(query || "").toUpperCase().match(/(?:,|\s)(ID|WA|OR|MT|CA|NV|UT|WY)$/);
-  if (qState) {
-    const abbr = qState[1];
-    const full = STATE_NAME_BY_ABBR[abbr] || "";
-    if (full && label.indexOf(", " + full) >= 0) score += 35;
+  const hintedState = stateHintFromQuery(originalInput || query);
+
+  if (hintedState && labelHasState(match, hintedState)) score += 60;
+  if (!hintedState && labelHasState(match, "ID")) score += 22;
+  if (!hintedState && labelHasState(match, "WA")) score += 18;
+
+  if (label.indexOf(", United States") >= 0) score += 12;
+
+  if (
+    label.indexOf(", Idaho") >= 0 ||
+    label.indexOf(", Washington") >= 0 ||
+    label.indexOf(", Montana") >= 0 ||
+    label.indexOf(", Oregon") >= 0
+  ) {
+    score += 12;
   }
 
   return score;
 }
 
 async function smartGeocodeSearch(input, count) {
-  const queries = buildLocationSearchQueries(input);
+  const original = String(input || "").trim();
+  const queries = buildLocationSearchQueries(original);
   const combined = [];
 
   for (let i = 0; i < queries.length; i++) {
@@ -1057,11 +1125,11 @@ async function smartGeocodeSearch(input, count) {
         label: r.label,
         lat: r.lat,
         lon: r.lon,
-        score: locationScore(r, q) + Math.max(0, 20 - i * 3)
+        score: locationScore(r, q, original) + Math.max(0, 24 - i * 3)
       });
     }
 
-    if (combined.length >= 5 && i >= 1) break;
+    if (combined.length >= 6 && i >= 2) break;
   }
 
   combined.sort(function (a, b) {

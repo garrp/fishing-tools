@@ -1994,7 +1994,7 @@ function renderHeaderAndNav() {
     '    <div class="headerRight">' +
     '      <div class="title">' +
     escHtml(title) +
-    '<div class="small muted">v ' +
+    '<div class="small muted">' +
     escHtml(APP_VERSION) +
     "</div></div>" +
     '      <div class="nav" id="nav"></div>' +

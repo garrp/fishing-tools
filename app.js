@@ -2609,7 +2609,6 @@ function renderLunarCard(container, dateIso) {
         </div>
       </div>
 
-      <div id="moon_phase_inline"></div>
     </div>
   `
   );
@@ -2657,6 +2656,8 @@ function renderHome() {
           <div class="fieldLabel">Step 2: Location</div>
         </div>
       </div>
+
+      <div id="moon_phase_inline"></div>
     </div>
   `
   );
@@ -2694,6 +2695,8 @@ function renderHome() {
     },
     { autoGps: false, inline: true }
   );
+
+  renderStaticLunar();
 
   appendHtml(page, '<div id="home_dynamic"></div>');
 

@@ -22,7 +22,7 @@
   - Restored dropdown species tips.
 */
 
-const APP_VERSION = "V1.02";
+const APP_VERSION = "V1.03";
 
 const LOGO_URL =
   "https://fishynw.com/wp-content/uploads/2025/07/FishyNW-Logo-transparent-with-letters-e1755409608978.png";
@@ -2656,8 +2656,6 @@ function renderHome() {
           <div class="fieldLabel">Step 2: Location</div>
         </div>
       </div>
-
-      <div id="moon_phase_inline"></div>
     </div>
   `
   );
@@ -2665,16 +2663,16 @@ function renderHome() {
   const dateInput = document.getElementById("home_date");
 
   function renderStaticLunar() {
-    const slot = document.getElementById("moon_phase_inline");
+    const slot = document.getElementById("moon_phase_below_chart");
     if (!slot) return;
 
     const useDate = isIsoDate(state.dateIso) ? state.dateIso : isoTodayLocal();
-    renderMoonPhaseInto(slot, useDate);
+    slot.innerHTML = "";
+    renderLunarCard(slot, useDate);
   }
 
   if (!isIsoDate(state.dateIso)) state.dateIso = isoTodayLocal();
   dateInput.value = state.dateIso;
-  renderStaticLunar();
 
   dateInput.addEventListener("change", function () {
     const v = String(dateInput.value || "").trim();
@@ -2683,7 +2681,6 @@ function renderHome() {
       state.dateIso = v;
     }
 
-    renderStaticLunar();
     renderHomeDynamic("date_change");
   });
 
@@ -2696,7 +2693,6 @@ function renderHome() {
     { autoGps: false, inline: true }
   );
 
-  renderStaticLunar();
 
   appendHtml(page, '<div id="home_dynamic"></div>');
 
@@ -2995,6 +2991,9 @@ function renderHome() {
       </div>
     `
     );
+
+    appendHtml(dyn, '<div id="moon_phase_below_chart"></div>');
+    renderStaticLunar();
 
     const conditionsCanvas = document.getElementById("conditions_canvas");
     drawFishingConditionsChart(conditionsCanvas, points, rainPoints, windows);

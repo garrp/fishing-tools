@@ -882,6 +882,206 @@ const STATE_NAME_BY_ABBR = {
   WY: "Wyoming"
 };
 
+const FISHYNW_LOCAL_LOCATIONS = [
+  {
+    keys: ["fernan", "fernan lake", "fernan lake village"],
+    label: "Fernan Lake Village, Idaho, United States",
+    lat: 47.6730,
+    lon: -116.7380
+  },
+  {
+    keys: ["cocolalla", "cocolalla id", "cocolalla idaho"],
+    label: "Cocolalla, Idaho, United States",
+    lat: 48.1077,
+    lon: -116.6185
+  },
+  {
+    keys: ["cocolalla lake"],
+    label: "Cocolalla Lake, Idaho, United States",
+    lat: 48.1140,
+    lon: -116.6150
+  },
+  {
+    keys: ["coeur d alene", "coeur dalene", "coeur d'alene", "cda"],
+    label: "Coeur d'Alene, Idaho, United States",
+    lat: 47.6777,
+    lon: -116.7805
+  },
+  {
+    keys: ["hauser", "hauser lake"],
+    label: "Hauser Lake, Idaho, United States",
+    lat: 47.7662,
+    lon: -117.0210
+  },
+  {
+    keys: ["hayden", "hayden lake"],
+    label: "Hayden, Idaho, United States",
+    lat: 47.7660,
+    lon: -116.7866
+  },
+  {
+    keys: ["wolf lodge", "wolf lodge bay"],
+    label: "Wolf Lodge Bay, Idaho, United States",
+    lat: 47.6738,
+    lon: -116.5632
+  },
+  {
+    keys: ["denton", "denton slough"],
+    label: "Denton Slough, Idaho, United States",
+    lat: 48.2144,
+    lon: -116.5410
+  },
+  {
+    keys: ["newman", "newman lake"],
+    label: "Newman Lake, Washington, United States",
+    lat: 47.7671,
+    lon: -117.0718
+  },
+  {
+    keys: ["priest", "priest lake"],
+    label: "Priest Lake, Idaho, United States",
+    lat: 48.5749,
+    lon: -116.9374
+  },
+  {
+    keys: ["spirit", "spirit lake"],
+    label: "Spirit Lake, Idaho, United States",
+    lat: 47.9663,
+    lon: -116.8685
+  },
+  {
+    keys: ["rose", "rose lake"],
+    label: "Rose Lake, Idaho, United States",
+    lat: 47.5388,
+    lon: -116.4613
+  },
+  {
+    keys: ["anderson", "anderson lake"],
+    label: "Anderson Lake, Idaho, United States",
+    lat: 47.4724,
+    lon: -116.7427
+  },
+  {
+    keys: ["avondale", "avondale lake"],
+    label: "Avondale Lake, Idaho, United States",
+    lat: 47.7699,
+    lon: -116.7480
+  },
+  {
+    keys: ["twin", "twin lakes"],
+    label: "Twin Lakes, Idaho, United States",
+    lat: 47.8588,
+    lon: -116.7815
+  },
+  {
+    keys: ["sandpoint"],
+    label: "Sandpoint, Idaho, United States",
+    lat: 48.2766,
+    lon: -116.5535
+  },
+  {
+    keys: ["post falls"],
+    label: "Post Falls, Idaho, United States",
+    lat: 47.7179,
+    lon: -116.9516
+  },
+  {
+    keys: ["rathdrum"],
+    label: "Rathdrum, Idaho, United States",
+    lat: 47.8124,
+    lon: -116.8966
+  },
+  {
+    keys: ["kettle falls"],
+    label: "Kettle Falls, Washington, United States",
+    lat: 48.6107,
+    lon: -118.0558
+  },
+  {
+    keys: ["lake roosevelt", "roosevelt"],
+    label: "Lake Roosevelt, Washington, United States",
+    lat: 48.1660,
+    lon: -118.0000
+  }
+];
+
+function normalizeLocationInputKey(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[’`]/g, "'")
+    .replace(/[^a-z0-9'\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripTrailingStateHint(key) {
+  return String(key || "")
+    .replace(/\s+(id|idaho|wa|washington|or|oregon|mt|montana)$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function localLocationMatches(input) {
+  const rawKey = normalizeLocationInputKey(input);
+  const strippedKey = stripTrailingStateHint(rawKey);
+  const matches = [];
+
+  function addMatch(item, score) {
+    const id = String(Number(item.lat).toFixed(4)) + "," + String(Number(item.lon).toFixed(4));
+
+    if (matches.some(function (x) {
+      return x.id === id;
+    })) {
+      return;
+    }
+
+    matches.push({
+      id: id,
+      label: item.label,
+      lat: item.lat,
+      lon: item.lon,
+      score: score,
+      local: true
+    });
+  }
+
+  for (let i = 0; i < FISHYNW_LOCAL_LOCATIONS.length; i++) {
+    const item = FISHYNW_LOCAL_LOCATIONS[i];
+
+    for (let k = 0; k < item.keys.length; k++) {
+      const key = normalizeLocationInputKey(item.keys[k]);
+      const keyNoState = stripTrailingStateHint(key);
+
+      if (rawKey === key || strippedKey === key || strippedKey === keyNoState) {
+        addMatch(item, 1000);
+        break;
+      }
+
+      if (strippedKey && key.indexOf(strippedKey) === 0) {
+        addMatch(item, 850);
+        break;
+      }
+
+      if (strippedKey && strippedKey.indexOf(key) === 0 && key.length >= 4) {
+        addMatch(item, 760);
+        break;
+      }
+
+      if (strippedKey && key.indexOf(strippedKey) >= 0 && strippedKey.length >= 4) {
+        addMatch(item, 700);
+        break;
+      }
+    }
+  }
+
+  matches.sort(function (a, b) {
+    return b.score - a.score;
+  });
+
+  return matches;
+}
+
+
 const FISHYNW_LOCATION_ALIASES = {
   "cocolalla": "Cocolalla, ID",
   "cocolalla lake": "Cocolalla Lake, ID",
@@ -1103,12 +1303,19 @@ function locationScore(match, query, originalInput) {
 
 async function smartGeocodeSearch(input, count) {
   const original = String(input || "").trim();
+  const local = localLocationMatches(original);
+  const maxCount = count || 8;
+
+  if (local.length && local[0].score >= 900) {
+    return local.slice(0, maxCount);
+  }
+
   const queries = buildLocationSearchQueries(original);
-  const combined = [];
+  const combined = local.slice();
 
   for (let i = 0; i < queries.length; i++) {
     const q = queries[i];
-    const results = await geocodeSearch(q, count || 8);
+    const results = await geocodeSearch(q, maxCount);
 
     for (let j = 0; j < results.length; j++) {
       const r = results[j];
@@ -1136,7 +1343,7 @@ async function smartGeocodeSearch(input, count) {
     return b.score - a.score;
   });
 
-  return combined.slice(0, count || 8);
+  return combined.slice(0, maxCount);
 }
 
 function stopSpeedWatchIfRunning() {
@@ -2059,7 +2266,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
         <div class="smartLocRow">
           <div class="smartLocInputWrap">
             <input id="${placeKey}_place" type="text"
-              placeholder="City, lake, or ZIP" autocomplete="off" />
+              placeholder="Example: Fernan, Cocolalla, Coeur d\'Alene" autocomplete="off" />
           </div>
           <button id="${placeKey}_search" class="searchMiniBtn" type="button">Find</button>
           <button id="${placeKey}_gps" class="gpsMiniBtn" type="button">GPS</button>
@@ -2075,7 +2282,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
         <div class="smartLocRow">
           <div class="smartLocInputWrap">
             <input id="${placeKey}_place" type="text"
-              placeholder="City, lake, or ZIP" autocomplete="off" />
+              placeholder="Example: Fernan, Cocolalla, Coeur d\'Alene" autocomplete="off" />
           </div>
           <button id="${placeKey}_search" class="searchMiniBtn" type="button">Find</button>
           <button id="${placeKey}_gps" class="gpsMiniBtn" type="button">GPS</button>
@@ -2179,7 +2386,12 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     const best = matches[0];
     const second = matches[1];
 
-    if (!second || best.score - second.score >= 18 || best.score >= 65) {
+    if (best.local && best.score >= 900) {
+      chooseLocation(best, sourceReason || "button_search");
+      return;
+    }
+
+    if (!second || best.score - second.score >= 80 || best.score >= 950) {
       chooseLocation(best, sourceReason || "button_search");
       return;
     }

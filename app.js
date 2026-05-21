@@ -656,6 +656,61 @@ let app = null;
     color: var(--text);
   }
 
+
+  .moonCard {
+    display:grid;
+    grid-template-columns: 82px 1fr;
+    gap: 14px;
+    align-items:center;
+  }
+
+  .moonCardInline {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0,0,0,0.10);
+  }
+
+  .moonGraphic {
+    width: 74px;
+    height: 74px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.18);
+    box-shadow: inset -10px -10px 18px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.10);
+    background: #dfe3df;
+    overflow:hidden;
+  }
+
+  .moonSvg {
+    width: 100%;
+    height: 100%;
+    display:block;
+  }
+
+  .moonTitle {
+    font-weight: 900;
+    font-size: 17px;
+    line-height: 20px;
+  }
+
+  .moonSub {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 17px;
+  }
+
+  .moonPill {
+    display:inline-block;
+    margin-top:8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: rgba(143,209,158,0.24);
+    font-size: 12px;
+    font-weight: 900;
+    color: var(--text);
+  }
+
   @media (max-width: 520px) {
     .wrap { padding: 10px 10px 30px 10px; }
 
@@ -685,6 +740,16 @@ let app = null;
       padding:8px 9px;
       min-width:42px;
       font-size:13px;
+    }
+
+    .moonCard {
+      grid-template-columns: 70px 1fr;
+      gap:12px;
+    }
+
+    .moonGraphic {
+      width:64px;
+      height:64px;
     }
 
     .moonCard {
@@ -2543,11 +2608,32 @@ function renderLunarCard(container, dateIso) {
           <div class="moonPill">${escHtml(String(illumPct))}% illuminated · ${escHtml(ageText)} days old</div>
         </div>
       </div>
+
+      <div id="moon_phase_inline"></div>
     </div>
   `
   );
 }
 
+
+
+function renderMoonPhaseInto(el, dateIso) {
+  if (!el) return;
+
+  const phase = lunarPhaseForDate(dateIso);
+  const illumPct = Math.round(phase.illumination * 100);
+  const ageText = String(Math.round(phase.age * 10) / 10);
+
+  el.innerHTML =
+    '<div class="moonCard moonCardInline">' +
+    '  <div class="moonGraphic">' + moonSvgForPhase(phase) + '</div>' +
+    '  <div>' +
+    '    <div class="moonTitle">' + escHtml(phase.name) + '</div>' +
+    '    <div class="moonSub">Moon phase for ' + escHtml(phase.dateIso) + '</div>' +
+    '    <div class="moonPill">' + escHtml(String(illumPct)) + '% illuminated · ' + escHtml(ageText) + ' days old</div>' +
+    '  </div>' +
+    '</div>';
+}
 
 // ----------------------------
 // Home
@@ -2578,12 +2664,11 @@ function renderHome() {
   const dateInput = document.getElementById("home_date");
 
   function renderStaticLunar() {
-    const slot = document.getElementById("home_lunar_static");
+    const slot = document.getElementById("moon_phase_inline");
     if (!slot) return;
 
     const useDate = isIsoDate(state.dateIso) ? state.dateIso : isoTodayLocal();
-    slot.innerHTML = "";
-    renderLunarCard(slot, useDate);
+    renderMoonPhaseInto(slot, useDate);
   }
 
   if (!isIsoDate(state.dateIso)) state.dateIso = isoTodayLocal();
@@ -2610,7 +2695,6 @@ function renderHome() {
     { autoGps: false, inline: true }
   );
 
-  appendHtml(page, '<div id="home_lunar_static"></div>');
   appendHtml(page, '<div id="home_dynamic"></div>');
 
   renderHomeDynamic("init");

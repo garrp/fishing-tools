@@ -543,6 +543,119 @@ let app = null;
   }
 
 
+
+  .smartLocRow {
+    display:grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 8px;
+    align-items:center;
+  }
+
+  .smartLocInputWrap {
+    position: relative;
+    min-width: 0;
+  }
+
+  .smartLocInputWrap input {
+    padding-right: 12px;
+  }
+
+  .gpsMiniBtn,
+  .searchMiniBtn {
+    width:auto;
+    min-width: 46px;
+    padding: 10px 11px;
+    border-radius:999px;
+    white-space:nowrap;
+  }
+
+  .smartLocStatus {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .smartLocStatus strong {
+    color: rgba(0,0,0,0.78);
+  }
+
+  .smartLocResults {
+    margin-top: 8px;
+    border: 1px solid rgba(0,0,0,0.12);
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .smartLocResultBtn {
+    display:block;
+    width:100%;
+    border:0;
+    border-bottom:1px solid rgba(0,0,0,0.08);
+    background:#fff;
+    color:rgba(0,0,0,0.82);
+    text-align:left;
+    border-radius:0;
+    padding: 10px 12px;
+    font-weight:800;
+  }
+
+  .smartLocResultBtn:last-child {
+    border-bottom:0;
+  }
+
+  .smartLocResultBtn:hover {
+    background: rgba(143,209,158,0.18);
+  }
+
+  .moonCard {
+    display:grid;
+    grid-template-columns: 82px 1fr;
+    gap: 14px;
+    align-items:center;
+  }
+
+  .moonGraphic {
+    width: 74px;
+    height: 74px;
+    border-radius: 50%;
+    border: 1px solid rgba(0,0,0,0.18);
+    box-shadow: inset -10px -10px 18px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.10);
+    background: #dfe3df;
+    overflow:hidden;
+  }
+
+  .moonSvg {
+    width: 100%;
+    height: 100%;
+    display:block;
+  }
+
+  .moonTitle {
+    font-weight: 900;
+    font-size: 17px;
+    line-height: 20px;
+  }
+
+  .moonSub {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 17px;
+  }
+
+  .moonPill {
+    display:inline-block;
+    margin-top:8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: rgba(143,209,158,0.24);
+    font-size: 12px;
+    font-weight: 900;
+    color: var(--text);
+  }
+
   @media (max-width: 520px) {
     .wrap { padding: 10px 10px 30px 10px; }
 
@@ -560,6 +673,29 @@ let app = null;
 
     .nav { grid-template-columns: repeat(2, minmax(0, 1fr)); gap:6px; }
     .navBtn { padding:8px 8px; font-size:13px; line-height:15px; }
+
+
+    .smartLocRow {
+      grid-template-columns: 1fr auto auto;
+      gap:6px;
+    }
+
+    .searchMiniBtn,
+    .gpsMiniBtn {
+      padding:8px 9px;
+      min-width:42px;
+      font-size:13px;
+    }
+
+    .moonCard {
+      grid-template-columns: 70px 1fr;
+      gap:12px;
+    }
+
+    .moonGraphic {
+      width:64px;
+      height:64px;
+    }
 
     .grid2 { grid-template-columns: 1fr; }
 
@@ -1791,8 +1927,8 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
           <div class="smartLocInputWrap">
             <input id="${placeKey}_place" type="text"
               placeholder="City, lake, or ZIP" autocomplete="off" />
-            <span class="smartLocIcon">Search</span>
           </div>
+          <button id="${placeKey}_search" class="searchMiniBtn" type="button">Find</button>
           <button id="${placeKey}_gps" class="gpsMiniBtn" type="button">GPS</button>
         </div>
 
@@ -1807,8 +1943,8 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
           <div class="smartLocInputWrap">
             <input id="${placeKey}_place" type="text"
               placeholder="City, lake, or ZIP" autocomplete="off" />
-            <span class="smartLocIcon">Search</span>
           </div>
+          <button id="${placeKey}_search" class="searchMiniBtn" type="button">Find</button>
           <button id="${placeKey}_gps" class="gpsMiniBtn" type="button">GPS</button>
         </div>
 
@@ -1821,9 +1957,9 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
   const usingEl = document.getElementById(placeKey + "_using");
   const matchesEl = document.getElementById(placeKey + "_matches");
   const placeInput = document.getElementById(placeKey + "_place");
+  const searchBtn = document.getElementById(placeKey + "_search");
   const gpsBtn = document.getElementById(placeKey + "_gps");
 
-  let searchTimer = null;
   let searchToken = 0;
 
   function renderUsing() {
@@ -1842,7 +1978,6 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     if (!chosen) return;
 
     setResolvedLocation(chosen.lat, chosen.lon, chosen.label);
-
     placeInput.value = chosen.label;
     matchesEl.innerHTML = "";
     renderUsing();
@@ -1853,26 +1988,23 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
   }
 
   function renderChoices(matches) {
-    if (!matches || !matches.length) {
+    const top = (matches || []).slice(0, 4);
+    if (!top.length) {
       matchesEl.innerHTML = "";
       return;
     }
 
-    const top = matches.slice(0, 4);
-
     matchesEl.innerHTML =
       '<div class="smartLocResults">' +
-      top
-        .map(function (m, i) {
-          return (
-            '<button class="smartLocResultBtn" type="button" data-loc-idx="' +
-            String(i) +
-            '">' +
-            escHtml(m.label) +
-            "</button>"
-          );
-        })
-        .join("") +
+      top.map(function (m, i) {
+        return (
+          '<button class="smartLocResultBtn" type="button" data-loc-idx="' +
+          String(i) +
+          '">' +
+          escHtml(m.label) +
+          "</button>"
+        );
+      }).join("") +
       "</div>";
 
     const btns = matchesEl.querySelectorAll("[data-loc-idx]");
@@ -1891,9 +2023,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
       clearResolvedLocation();
       matchesEl.innerHTML = "";
       usingEl.textContent = "";
-      if (typeof onResolved === "function") {
-        onResolved("cleared_empty");
-      }
+      if (typeof onResolved === "function") onResolved("cleared_empty");
       return;
     }
 
@@ -1917,7 +2047,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
     const second = matches[1];
 
     if (!second || best.score - second.score >= 18 || best.score >= 65) {
-      chooseLocation(best, sourceReason || "smart_auto");
+      chooseLocation(best, sourceReason || "button_search");
       return;
     }
 
@@ -1931,44 +2061,37 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
   }
 
   placeInput.addEventListener("input", function () {
-    const raw = String(placeInput.value || "");
-    const val = raw.trim();
+    const val = String(placeInput.value || "").trim();
 
-    clearTimeout(searchTimer);
+    matchesEl.innerHTML = "";
+
+    if (!val) {
+      clearResolvedLocation();
+      usingEl.textContent = "";
+      if (typeof onResolved === "function") onResolved("cleared_empty");
+      return;
+    }
 
     if (hasResolvedLocation()) {
       const currentLabel = String(state.placeLabel || "").trim();
-
-      if (val && val !== currentLabel) {
+      if (val !== currentLabel) {
         clearResolvedLocation();
-        matchesEl.innerHTML = "";
-        usingEl.textContent = "";
+        usingEl.textContent = "Tap Find when ready.";
       }
-
-      if (!val) {
-        clearResolvedLocation();
-        matchesEl.innerHTML = "";
-        usingEl.textContent = "";
-
-        if (typeof onResolved === "function") {
-          onResolved("auto_cleared_empty");
-        }
-      }
+    } else {
+      usingEl.textContent = "Tap Find when ready.";
     }
-
-    if (!val) return;
-
-    searchTimer = setTimeout(function () {
-      runSmartSearch(val, "smart_typeahead");
-    }, 550);
   });
 
   placeInput.addEventListener("keydown", function (e) {
     if (e.key === "Enter") {
       e.preventDefault();
-      clearTimeout(searchTimer);
       runSmartSearch(placeInput.value, "enter_search");
     }
+  });
+
+  searchBtn.addEventListener("click", function () {
+    runSmartSearch(placeInput.value, "button_search");
   });
 
   function doGps() {
@@ -1986,11 +2109,9 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
         const lon = pos.coords.longitude;
 
         setResolvedLocation(lat, lon, "Current location");
-
         state.matches = [];
         state.selectedIndex = 0;
         matchesEl.innerHTML = "";
-
         placeInput.value = "Current location";
 
         usingEl.innerHTML =
@@ -2000,9 +2121,7 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
           lon.toFixed(4) +
           ")";
 
-        if (typeof onResolved === "function") {
-          onResolved("gps");
-        }
+        if (typeof onResolved === "function") onResolved("gps");
 
         reverseGeocode(lat, lon).then(function (label) {
           if (label) {
@@ -2012,14 +2131,11 @@ function renderLocationPicker(container, placeKey, onResolved, opts) {
 
           renderUsing();
 
-          if (typeof onResolved === "function") {
-            onResolved("gps_reverse");
-          }
+          if (typeof onResolved === "function") onResolved("gps_reverse");
         });
       },
       function (err) {
-        usingEl.innerHTML =
-          "<strong>Location error:</strong> " + escHtml(err.message);
+        usingEl.innerHTML = "<strong>Location error:</strong> " + escHtml(err.message);
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 500 }
     );
@@ -2341,6 +2457,98 @@ function summarizeWindSpeedDirection(points) {
 }
 
 
+
+function lunarPhaseForDate(dateIso) {
+  const dateText = isIsoDate(dateIso) ? dateIso : isoTodayLocal();
+  const parts = dateText.split("-");
+  const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0, 0);
+
+  const synodicMonth = 29.530588853;
+  const knownNewMoon = new Date(2000, 0, 6, 18, 14, 0, 0);
+  const days = (d.getTime() - knownNewMoon.getTime()) / 86400000;
+  const age = ((days % synodicMonth) + synodicMonth) % synodicMonth;
+  const fraction = age / synodicMonth;
+  const illumination = 0.5 * (1 - Math.cos(2 * Math.PI * fraction));
+
+  let name = "New Moon";
+  if (age < 1.84566) name = "New Moon";
+  else if (age < 5.53699) name = "Waxing Crescent";
+  else if (age < 9.22831) name = "First Quarter";
+  else if (age < 12.91963) name = "Waxing Gibbous";
+  else if (age < 16.61096) name = "Full Moon";
+  else if (age < 20.30228) name = "Waning Gibbous";
+  else if (age < 23.99361) name = "Last Quarter";
+  else if (age < 27.68493) name = "Waning Crescent";
+
+  return {
+    dateIso: dateText,
+    age: age,
+    fraction: fraction,
+    illumination: illumination,
+    name: name
+  };
+}
+
+function moonSvgForPhase(phase) {
+  const p = phase || lunarPhaseForDate(isoTodayLocal());
+  const fraction = Math.max(0, Math.min(1, Number(p.fraction) || 0));
+  const illum = Math.max(0, Math.min(1, Number(p.illumination) || 0));
+  const waxing = fraction < 0.5;
+  const fullish = illum > 0.985;
+  const newish = illum < 0.015;
+
+  if (newish) {
+    return '<svg class="moonSvg" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="48" fill="#1f2a24"/><circle cx="38" cy="34" r="3" fill="rgba(255,255,255,0.12)"/><circle cx="62" cy="58" r="2" fill="rgba(255,255,255,0.10)"/></svg>';
+  }
+
+  if (fullish) {
+    return '<svg class="moonSvg" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="48" fill="#e7eadf"/><circle cx="38" cy="34" r="4" fill="rgba(0,0,0,0.08)"/><circle cx="63" cy="58" r="3" fill="rgba(0,0,0,0.07)"/><circle cx="52" cy="74" r="2" fill="rgba(0,0,0,0.06)"/></svg>';
+  }
+
+  const rx = Math.max(4, Math.round(Math.abs(1 - 2 * illum) * 48));
+  const light = "#e7eadf";
+  const dark = "#1f2a24";
+  const base = waxing ? dark : light;
+  const overlay = waxing ? light : dark;
+  const cx = waxing ? 50 + rx : 50 - rx;
+
+  return (
+    '<svg class="moonSvg" viewBox="0 0 100 100" aria-hidden="true">' +
+    '<defs><clipPath id="moonClip"><circle cx="50" cy="50" r="48"/></clipPath></defs>' +
+    '<circle cx="50" cy="50" r="48" fill="' + base + '"/>' +
+    '<g clip-path="url(#moonClip)"><circle cx="' + String(cx) + '" cy="50" r="48" fill="' + overlay + '"/></g>' +
+    '<circle cx="38" cy="34" r="3" fill="rgba(0,0,0,0.07)"/>' +
+    '<circle cx="63" cy="58" r="2.5" fill="rgba(0,0,0,0.06)"/>' +
+    '<circle cx="50" cy="50" r="48" fill="none" stroke="rgba(0,0,0,0.18)" stroke-width="1"/>' +
+    '</svg>'
+  );
+}
+
+function renderLunarCard(container, dateIso) {
+  if (!container) return;
+
+  const phase = lunarPhaseForDate(dateIso);
+  const illumPct = Math.round(phase.illumination * 100);
+  const ageText = String(Math.round(phase.age * 10) / 10);
+
+  appendHtml(
+    container,
+    `
+    <div class="card">
+      <div class="moonCard">
+        <div class="moonGraphic">${moonSvgForPhase(phase)}</div>
+        <div>
+          <div class="moonTitle">${escHtml(phase.name)}</div>
+          <div class="moonSub">Moon phase for ${escHtml(phase.dateIso)}</div>
+          <div class="moonPill">${escHtml(String(illumPct))}% illuminated · ${escHtml(ageText)} days old</div>
+        </div>
+      </div>
+    </div>
+  `
+  );
+}
+
+
 // ----------------------------
 // Home
 // ----------------------------
@@ -2369,8 +2577,18 @@ function renderHome() {
 
   const dateInput = document.getElementById("home_date");
 
+  function renderStaticLunar() {
+    const slot = document.getElementById("home_lunar_static");
+    if (!slot) return;
+
+    const useDate = isIsoDate(state.dateIso) ? state.dateIso : isoTodayLocal();
+    slot.innerHTML = "";
+    renderLunarCard(slot, useDate);
+  }
+
   if (!isIsoDate(state.dateIso)) state.dateIso = isoTodayLocal();
   dateInput.value = state.dateIso;
+  renderStaticLunar();
 
   dateInput.addEventListener("change", function () {
     const v = String(dateInput.value || "").trim();
@@ -2379,6 +2597,7 @@ function renderHome() {
       state.dateIso = v;
     }
 
+    renderStaticLunar();
     renderHomeDynamic("date_change");
   });
 
@@ -2388,9 +2607,10 @@ function renderHome() {
     function () {
       renderHomeDynamic("location_resolved");
     },
-    { autoGps: true, inline: true }
+    { autoGps: false, inline: true }
   );
 
+  appendHtml(page, '<div id="home_lunar_static"></div>');
   appendHtml(page, '<div id="home_dynamic"></div>');
 
   renderHomeDynamic("init");

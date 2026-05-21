@@ -1,5 +1,3 @@
-# fishing-tools
-Tools for fishing
 # FishyNW Planning Tools
 
 FishyNW Planning Tools is a lightweight fishing planning app built for quick trip checks on mobile or desktop. It helps anglers review date, location, weather, wind, rain chance, fishing-window timing, moon phase, weather alerts, trolling depth, species tips, and GPS speed.

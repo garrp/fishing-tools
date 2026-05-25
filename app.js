@@ -2743,6 +2743,26 @@ function windDirectionLabel(deg) {
   return dirs[idx];
 }
 
+function averageHourlyWind(points) {
+  if (!points || !points.length) return null;
+
+  let total = 0;
+  let count = 0;
+
+  for (let i = 0; i < points.length; i++) {
+    const mph = Number(points[i].mph);
+
+    if (Number.isFinite(mph)) {
+      total += mph;
+      count += 1;
+    }
+  }
+
+  if (!count) return null;
+
+  return total / count;
+}
+
 function summarizeWindSpeedDirection(points) {
   if (!points || !points.length) {
     return "Hourly wind direction data is not available for this date.";
@@ -3183,6 +3203,9 @@ function renderHome() {
       }
     }
 
+    const avgWind = averageHourlyWind(points);
+    const avgWindDisplay = avgWind === null ? "N/A" : String(Math.round(avgWind)) + " mph";
+
     dyn.innerHTML = "";
 
     const precipDisplay = popIsFinite
@@ -3209,9 +3232,9 @@ function renderHome() {
           </div>
 
           <div class="tile">
-            <div class="tileTop">Max sustained wind</div>
-            <div class="tileVal">${escHtml(Math.round(windMax))} mph</div>
-            <div class="tileSub">Day max</div>
+            <div class="tileTop">Average sustained wind</div>
+            <div class="tileVal">${escHtml(avgWindDisplay)}</div>
+            <div class="tileSub">Hourly average</div>
           </div>
 
           <div class="tile">

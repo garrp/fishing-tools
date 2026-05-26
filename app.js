@@ -2801,7 +2801,7 @@ function forecastStatusChange(points, startPoint, baseInputs, currentLabel) {
     });
 
     if (!firstCaution && status.label === "CAUTION") firstCaution = p;
-    if (!firstNoGo && status.label === "NO-GO") {
+    if (status.label === "NO-GO") {
       firstNoGo = p;
       break;
     }
@@ -3193,6 +3193,7 @@ function renderHome() {
       String(Number(state.lon).toFixed(3));
 
     const alertsForDate = filterAlertsForDate(alerts, useIso);
+
 
     const pointsRaw = filterHourlyToDate(
       wx.hourly.time || [],

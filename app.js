@@ -1699,7 +1699,7 @@ async function fetchWeatherWindMulti(lat, lon) {
     "&longitude=" +
     encodeURIComponent(lon) +
     "&daily=temperature_2m_min,temperature_2m_max,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max" +
-    "&hourly=wind_speed_10m,wind_direction_10m,precipitation_probability,precipitation" +
+    "&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m,precipitation_probability,precipitation" +
     "&wind_speed_unit=mph" +
     "&precipitation_unit=inch" +
     "&temperature_unit=fahrenheit" +
@@ -1723,6 +1723,8 @@ async function fetchWeatherWindMulti(lat, lon) {
     hourly: {
       time: hourly.time || [],
       wind: hourly.wind_speed_10m || [],
+      windDir: hourly.wind_direction_10m || [],
+      gust: hourly.wind_gusts_10m || [],
       rainProb: hourly.precipitation_probability || [],
       rainAmount: hourly.precipitation || []
     }
@@ -2743,6 +2745,79 @@ function windDirectionLabel(deg) {
   return dirs[idx];
 }
 
+function selectedDateImmediateTime(dateIso) {
+  const now = new Date();
+
+  if (dateIso === isoTodayLocal()) {
+    return now;
+  }
+
+  const parts = String(dateIso || "").split("-");
+  if (parts.length === 3) {
+    return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 6, 0, 0, 0);
+  }
+
+  return now;
+}
+
+function nearestHourlyPoint(points, targetTime) {
+  if (!points || !points.length) return null;
+
+  const target = targetTime && targetTime.getTime ? targetTime.getTime() : Date.now();
+  let best = points[0];
+  let bestDiff = Math.abs(points[0].dt.getTime() - target);
+
+  for (let i = 1; i < points.length; i++) {
+    const diff = Math.abs(points[i].dt.getTime() - target);
+
+    if (diff < bestDiff) {
+      best = points[i];
+      bestDiff = diff;
+    }
+  }
+
+  return best;
+}
+
+function forecastStatusChange(points, startPoint, baseInputs, currentLabel) {
+  if (!points || !points.length || !startPoint) return "";
+
+  const startMs = startPoint.dt.getTime();
+  let firstCaution = null;
+  let firstNoGo = null;
+
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+
+    if (!p || !p.dt || p.dt.getTime() <= startMs) continue;
+
+    const status = computeGoStatus({
+      seed: String(baseInputs.seed || "") + "|future|" + String(i),
+      windMax: safeNum(p.mph, 0),
+      gustMax: Number.isFinite(Number(p.gust)) ? Number(p.gust) : safeNum(p.mph, 0),
+      tmin: baseInputs.tmin,
+      tmax: baseInputs.tmax,
+      hasAlerts: false
+    });
+
+    if (!firstCaution && status.label === "CAUTION") firstCaution = p;
+    if (!firstNoGo && status.label === "NO-GO") {
+      firstNoGo = p;
+      break;
+    }
+  }
+
+  if (firstNoGo && currentLabel !== "NO-GO") {
+    return " Conditions are expected to turn NO-GO around " + formatTime(firstNoGo.dt) + ".";
+  }
+
+  if (firstCaution && currentLabel === "GO") {
+    return " Conditions are expected to turn CAUTION around " + formatTime(firstCaution.dt) + ".";
+  }
+
+  return "";
+}
+
 function averageHourlyWind(points) {
   if (!points || !points.length) return null;
 
@@ -3119,16 +3194,6 @@ function renderHome() {
 
     const alertsForDate = filterAlertsForDate(alerts, useIso);
 
-    const status = computeGoStatus({
-      seed: seed,
-      windMax: windMax,
-      gustMax: gustMax,
-      tmin: tmin,
-      tmax: tmax,
-      hasAlerts: alertsForDate.length > 0
-    });
-
-
     const pointsRaw = filterHourlyToDate(
       wx.hourly.time || [],
       wx.hourly.wind || [],
@@ -3141,15 +3206,23 @@ function renderHome() {
       useIso
     );
 
+    const gustRaw = filterHourlyToDate(
+      wx.hourly.time || [],
+      wx.hourly.gust || [],
+      useIso
+    );
+
     const points = [];
 
     for (let i = 0; i < pointsRaw.length; i++) {
       if (i % 2 === 0) {
         const dirAt = dirRaw[i] ? Number(dirRaw[i].v) : null;
+        const gustAt = gustRaw[i] ? Number(gustRaw[i].v) : null;
         points.push({
           dt: pointsRaw[i].dt,
           mph: safeNum(pointsRaw[i].v, 0),
-          dir: dirAt
+          dir: dirAt,
+          gust: gustAt
         });
       }
     }
@@ -3157,10 +3230,12 @@ function renderHome() {
     if (points.length < 2) {
       for (let j = 0; j < pointsRaw.length; j++) {
         const dirAt2 = dirRaw[j] ? Number(dirRaw[j].v) : null;
+        const gustAt2 = gustRaw[j] ? Number(gustRaw[j].v) : null;
         points.push({
           dt: pointsRaw[j].dt,
           mph: safeNum(pointsRaw[j].v, 0),
-          dir: dirAt2
+          dir: dirAt2,
+          gust: gustAt2
         });
       }
     }
@@ -3201,6 +3276,30 @@ function renderHome() {
           amount: safeNum(amountMatch2, 0)
         });
       }
+    }
+
+    const immediateTime = selectedDateImmediateTime(useIso);
+    const immediatePoint = nearestHourlyPoint(points, immediateTime);
+    const immediateWind = immediatePoint ? safeNum(immediatePoint.mph, windMax) : windMax;
+    const immediateGust = immediatePoint && Number.isFinite(Number(immediatePoint.gust))
+      ? Number(immediatePoint.gust)
+      : immediateWind;
+
+    const status = computeGoStatus({
+      seed: seed,
+      windMax: immediateWind,
+      gustMax: immediateGust,
+      tmin: tmin,
+      tmax: tmax,
+      hasAlerts: alertsForDate.length > 0
+    });
+
+    if (!alertsForDate.length) {
+      status.message += forecastStatusChange(points, immediatePoint, {
+        seed: seed,
+        tmin: tmin,
+        tmax: tmax
+      }, status.label);
     }
 
     const avgWind = averageHourlyWind(points);
@@ -3259,7 +3358,7 @@ function renderHome() {
           <div class="meterNeedle" id="meter_needle" style="left:${escHtml(String(status.needlePct))}%;"></div>
         </div>
 
-        <div class="small muted" style="margin-top:8px;">${escHtml(status.message)}</div>
+        <div class="small muted" style="margin-top:8px;">Near-term status based on the selected date's nearest available hourly forecast. ${escHtml(status.message)}</div>
       </div>
     `
     );

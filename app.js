@@ -1413,6 +1413,35 @@ async function fetchJson(url, timeoutMs) {
   }
 }
 
+async function fetchJsonWithRetry(url, timeoutMs, attempts) {
+  const tries = Math.max(1, Number(attempts || 2));
+  let lastErr = null;
+
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fetchJson(url, timeoutMs);
+    } catch (e) {
+      lastErr = e;
+
+      const msg = String(e && e.message ? e.message : e).toLowerCase();
+      const canRetry =
+        msg.indexOf("timed out") >= 0 ||
+        msg.indexOf("network") >= 0 ||
+        msg.indexOf("failed to fetch") >= 0;
+
+      if (!canRetry || i === tries - 1) {
+        throw e;
+      }
+
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 900);
+      });
+    }
+  }
+
+  throw lastErr || new Error("Request failed.");
+}
+
 function niceErr(e) {
   const s = String(e && e.message ? e.message : e);
   return s.length > 180 ? s.slice(0, 180) + "..." : s;
@@ -1436,7 +1465,7 @@ async function fetchNOAAAlerts(lat, lon) {
       "," +
       encodeURIComponent(lon);
 
-    const pointData = await fetchJson(pointUrl, 12000);
+    const pointData = await fetchJsonWithRetry(pointUrl, 18000, 2);
 
     const zoneUrl =
       pointData &&
@@ -1454,7 +1483,7 @@ async function fetchNOAAAlerts(lat, lon) {
       "https://api.weather.gov/alerts/active?zone=" +
       encodeURIComponent(zoneId);
 
-    const alertsData = await fetchJson(alertsUrl, 12000);
+    const alertsData = await fetchJsonWithRetry(alertsUrl, 18000, 2);
     const features = alertsData && alertsData.features ? alertsData.features : [];
 
     return features.map(function (f) {
@@ -1594,7 +1623,7 @@ async function geocodeSearch(query, count) {
     "&language=en&format=json";
 
   try {
-    const data = await fetchJson(url, 12000);
+    const data = await fetchJsonWithRetry(url, 22000, 2);
     const results = data && data.results ? data.results : [];
 
     return results
@@ -1628,7 +1657,7 @@ async function reverseGeocode(lat, lon) {
     "&language=en&format=json";
 
   try {
-    const data = await fetchJson(url, 12000);
+    const data = await fetchJsonWithRetry(url, 22000, 2);
     const results = data && data.results ? data.results : [];
 
     if (!results.length) return null;
@@ -1661,7 +1690,7 @@ async function fetchSunTimesMulti(lat, lon) {
     "&forecast_days=7" +
     "&timezone=auto";
 
-  const data = await fetchJson(url, 12000);
+  const data = await fetchJsonWithRetry(url, 18000, 2);
   const daily = data && data.daily ? data.daily : null;
 
   return {
@@ -1706,7 +1735,7 @@ async function fetchWeatherWindMulti(lat, lon) {
     "&forecast_days=7" +
     "&timezone=auto";
 
-  const data = await fetchJson(url, 12000);
+  const data = await fetchJsonWithRetry(url, 18000, 2);
 
   const daily = data && data.daily ? data.daily : {};
   const hourly = data && data.hourly ? data.hourly : {};
@@ -1772,8 +1801,21 @@ async function getForecastBundle(lat, lon) {
   }
 
   const wx = await fetchWeatherWindMulti(lat, lon);
-  const sun = await fetchSunTimesMulti(lat, lon);
-  const alerts = await fetchNOAAAlerts(lat, lon);
+
+  let sun = null;
+  let alerts = [];
+
+  try {
+    sun = await fetchSunTimesMulti(lat, lon);
+  } catch (e) {
+    sun = { days: [], sunrise: [], sunset: [] };
+  }
+
+  try {
+    alerts = await fetchNOAAAlerts(lat, lon);
+  } catch (e2) {
+    alerts = [];
+  }
 
   forecastCache.key = k;
   forecastCache.ts = now;
@@ -3113,10 +3155,19 @@ function renderHome() {
     } catch (e) {
       dyn.innerHTML =
         '<div class="card"><strong>Could not load data.</strong>' +
-        '<div class="small muted">Make sure the page is HTTPS. If this persists, the request may be blocked or the network is unstable.</div>' +
+        '<div class="small muted">The forecast provider did not respond in time. Check signal strength, try again, or search a fixed location instead of GPS.</div>' +
         '<div class="small muted" style="margin-top:6px;">' +
         escHtml(niceErr(e)) +
-        "</div></div>";
+        '</div><div style="margin-top:10px;"><button id="retry_forecast_btn" type="button">Try again</button></div></div>';
+
+      const retryBtn = document.getElementById("retry_forecast_btn");
+      if (retryBtn) {
+        retryBtn.addEventListener("click", function () {
+          forecastCache.ts = 0;
+          renderHomeDynamic("manual_retry");
+        });
+      }
+
       return;
     }
 
